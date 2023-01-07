@@ -6,9 +6,11 @@
 
 if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
 if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-project.org")
 
 library(tidyverse)
 library(caret)
+library(lubridate)
 
 # MovieLens 10M dataset:
 # https://grouplens.org/datasets/movielens/10m/
@@ -61,18 +63,34 @@ final_holdout_test <- temp %>%
 removed <- anti_join(temp, final_holdout_test)
 edx <- rbind(edx, removed)
 
-rm(dl, ratings, movies, test_index, temp, movielens, removed)
 
-edx <- edx[as.integer(dim[edx][1]/10),]
+print(edx$genres[str_detect(edx$genres, "[A-Z][a-z]+|
++            [A-Z][a-z]+\\|+[A-Z][a-z]", negate = TRUE)])
+print(edx$title[str_detect(edx$title, "\\s\\(\\d+\\)$", negate = TRUE)])
 
-edx$genres[str_detect(edx$genres, "[A-Z][a-z]+|
-+            [A-Z][a-z]+\\|+[A-Z][a-z]", negate = TRUE)]
-edx$title[str_detect(edx$title, "\\s\\(\\d+\\)$", negate = TRUE)]
+# temp <- createDataPartition(y = edx$rating, times = 1, p = 0.15, list = FALSE)
+# edx <- edx[temp,]
 
-edx <- edx |>separate(genres, c("genre_1", "genre_2", "genre_3", "genre_4", 
-                                "genre_5", "genre_6", "genre_7", "genre_8"), 
-                      sep = "\\|", remove = FALSE, fill = "right") |> 
+# Genres 6, 7, and 8 collectively account for only 0.868% of data
+edx <- edx |>separate(genres, 
+                      c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5"), 
+                      sep = "\\|", remove = FALSE, extra = "drop") |> 
   mutate(n_genre = rowSums(str_split(genres, "\\|", simplify = TRUE) != ""))
 
+iso <- as_datetime(edx$timestamp)
+
+edx <- edx |> mutate(ts_year=year(iso), ts_month=month(iso), ts_day=day(iso), 
+                     ts_hour=hour(iso))
+
+m_year <- str_match(edx$title, "\\s\\((\\d+)\\)$")[,2]
+era_len <- 5
+m_era = floor(as.integer(m_year) / era_len) * era_len
+
+edx <- edx |> mutate(movie_year = year(mdy(paste("1-1-", m_year))), 
+                     movie_era = as.character(m_era))
+
 str(edx)
-edx |> head()
+print(edx |> head(15))
+
+rm(dl, ratings, movies, test_index, temp, movielens, removed, iso, m_year, 
+   m_era)
