@@ -7,10 +7,12 @@
 if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
 if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
 if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-project.org")
+if(!require(data.table)) install.packages("lubridate", repos = "http://cran.us.r-project.org")
 
 library(tidyverse)
 library(caret)
 library(lubridate)
+library(data.table)
 
 # MovieLens 10M dataset:
 # https://grouplens.org/datasets/movielens/10m/
@@ -71,11 +73,6 @@ print(edx$title[str_detect(edx$title, "\\s\\(\\d+\\)$", negate = TRUE)])
 # temp <- createDataPartition(y = edx$rating, times = 1, p = 0.15, list = FALSE)
 # edx <- edx[temp,]
 
-# Genres 6, 7, and 8 collectively account for only 0.868% of data
-edx <- edx |>separate(genres, 
-                      c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5"), 
-                      sep = "\\|", remove = FALSE, extra = "drop") |> 
-  mutate(n_genre = rowSums(str_split(genres, "\\|", simplify = TRUE) != ""))
 
 iso <- as_datetime(edx$timestamp)
 
@@ -88,6 +85,22 @@ m_era = floor(as.integer(m_year) / era_len) * era_len
 
 edx <- edx |> mutate(movie_year = year(mdy(paste("1-1-", m_year))), 
                      movie_era = as.character(m_era))
+
+
+# Genres 6, 7, and 8 collectively account for only 0.868% of data
+
+# edx <- edx |>separate(genres, 
+#                       c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5"), 
+#                       sep = "\\|", remove = FALSE, extra = "drop") |> 
+#   mutate(n_genre = rowSums(str_split(genres, "\\|", simplify = TRUE) != ""))
+
+# data.table method to separate genres column is 16.267 times faster than above 
+# tidyverse method
+
+setDT(edx)
+edx[, c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5") := 
+      tstrsplit(edx$genres, "|", fixed=TRUE, fill = "None", keep = 1:5)]
+
 
 str(edx)
 print(edx |> head(15))
