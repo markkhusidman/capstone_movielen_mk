@@ -73,34 +73,39 @@ print(edx$title[str_detect(edx$title, "\\s\\(\\d+\\)$", negate = TRUE)])
 # temp <- createDataPartition(y = edx$rating, times = 1, p = 0.15, list = FALSE)
 # edx <- edx[temp,]
 
+# Genres 6, 7, and 8 collectively account for only 0.868% of data
+
+# data.table method to separate genres column is 16.267 times faster than  
+# analogous tidyverse method (separate)
+
+setDT(edx)
+
+
+# Separate genres and calculate number of genres given
+
+edx[, c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5") := 
+      tstrsplit(edx$genres, "|", fixed=TRUE, fill = "None", keep = 1:5)]
+
+edx[, n_genres := rowSums(.SD != "None"), .SDcols = 
+      c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5")]
+
+
+# Extract time-stamp data
 
 iso <- as_datetime(edx$timestamp)
 
-edx <- edx |> mutate(ts_year=year(iso), ts_month=month(iso), ts_day=day(iso), 
-                     ts_hour=hour(iso))
+edx[, c("ts_year", "ts_month", "ts_day", "ts_hour") := 
+      list(year(iso), month(iso), day(iso), hour(iso))]
+
+
+# Extract movie year and movie era from title
 
 m_year <- str_match(edx$title, "\\s\\((\\d+)\\)$")[,2]
 era_len <- 5
 m_era = floor(as.integer(m_year) / era_len) * era_len
 
-edx <- edx |> mutate(movie_year = year(mdy(paste("1-1-", m_year))), 
-                     movie_era = as.character(m_era))
-
-
-# Genres 6, 7, and 8 collectively account for only 0.868% of data
-
-# edx <- edx |>separate(genres, 
-#                       c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5"), 
-#                       sep = "\\|", remove = FALSE, extra = "drop") |> 
-#   mutate(n_genre = rowSums(str_split(genres, "\\|", simplify = TRUE) != ""))
-
-# data.table method to separate genres column is 16.267 times faster than above 
-# tidyverse method
-
-setDT(edx)
-edx[, c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5") := 
-      tstrsplit(edx$genres, "|", fixed=TRUE, fill = "None", keep = 1:5)]
-
+edx[, c("movie_year", "movie_era") := list(year(mdy(paste("1-1-", m_year))), 
+                                           as.character(m_era))]
 
 str(edx)
 print(edx |> head(15))
