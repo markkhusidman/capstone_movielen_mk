@@ -91,24 +91,37 @@ edx[, n_genres := rowSums(.SD != "None"), .SDcols =
 
 
 # Extract time-stamp data
-
 iso <- as_datetime(edx$timestamp)
 
 edx[, c("ts_year", "ts_month", "ts_day", "ts_hour") := 
       list(year(iso), month(iso), day(iso), hour(iso))]
 
 
-# Extract movie year and movie era from title
-
+# Extract movie year from title
 m_year <- str_match(edx$title, "\\s\\((\\d+)\\)$")[,2]
-era_len <- 5
-m_era = floor(as.integer(m_year) / era_len) * era_len
 
-edx[, c("movie_year", "movie_era") := list(year(mdy(paste("1-1-", m_year))), 
-                                           as.character(m_era))]
+edx[, movie_year := year(mdy(paste("1-1-", m_year)))]
+
+
+# Extract movie era from title
+era_len <- 5
+edx[, movie_era := as.character(floor(as.integer(m_year) / era_len) * era_len)]
+
+
+# Calculate number of reviews per user
+edx[, n_rev := length(movieId), by = userId]
+
+
+# calculate relative user mean across all genres and user standard deviation 
+# across all genres
+
+global_mean <- mean(edx$rating)
+
+edx[, c("user_avg_rel", "user_sdev") := 
+      list(mean(rating) - global_mean, sd(rating)), by = userId]
+
 
 str(edx)
 print(edx |> head(15))
 
-rm(dl, ratings, movies, test_index, temp, movielens, removed, iso, m_year, 
-   m_era)
+rm(dl, ratings, movies, test_index, temp, movielens, removed, iso, m_year)
