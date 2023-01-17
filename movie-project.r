@@ -112,13 +112,22 @@ edx[, movie_era := as.character(floor(as.integer(m_year) / era_len) * era_len)]
 edx[, n_rev := length(movieId), by = userId]
 
 
-# calculate relative user mean across all genres and user standard deviation 
-# across all genres
+# Calculate centered mean rating, standard deviation, and number of reviews
+# for each user across all genres
 
 global_mean <- mean(edx$rating)
 
-edx[, c("user_avg_rel", "user_sdev") := 
-      list(mean(rating) - global_mean, sd(rating)), by = userId]
+edx[, c("user_avg_rel", "user_sdev", "user_nrev") := 
+      list(mean(rating) - global_mean, sd(rating), length(rating)), by = userId]
+
+
+# Calculate centered mean rating, standard deviation, and number of reviews
+# all combinations of genre (taking into account genre order) 
+
+for(col in c("genres", "genre_1", "genre_2", "genre_3", "genre_4", "genre_5")){
+  edx[, paste0(col, c("_avg_rel", "_sdev", "_nrev")) 
+      := list(mean(rating), sd(rating), length(rating)), by = col]
+}
 
 
 str(edx)
