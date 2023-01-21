@@ -80,14 +80,18 @@ print(edx$title[str_detect(edx$title, "\\s\\(\\d+\\)$", negate = TRUE)])
 
 setDT(edx)
 
-
-# Separate genres and calculate number of genres given
+# Separate genres and calculate number of genres given. Convert genres to 
+# factors
 
 edx[, c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5") := 
       tstrsplit(edx$genres, "|", fixed=TRUE, fill = "None", keep = 1:5)]
 
 edx[, n_genres := rowSums(.SD != "None"), .SDcols = 
       c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5")]
+
+edx[, c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5") := 
+      list(factor(genre_1), factor(genre_2), factor(genre_3), factor(genre_4),
+           factor(genre_5))]
 
 
 # Extract time-stamp data
@@ -108,10 +112,6 @@ era_len <- 5
 edx[, movie_era := as.character(floor(as.integer(m_year) / era_len) * era_len)]
 
 
-# Calculate number of reviews per user
-edx[, n_rev := length(movieId), by = userId]
-
-
 # Calculate centered mean rating, standard deviation, and number of reviews
 # for each user across all genres
 
@@ -121,12 +121,21 @@ edx[, c("user_avg_rel", "user_sdev", "user_nrev") :=
       list(mean(rating) - global_mean, sd(rating), length(rating)), by = userId]
 
 
-# Calculate centered mean rating, standard deviation, and number of reviews
+# Calculate mean rating, standard deviation, and number of reviews for
 # all combinations of genre (taking into account genre order) 
 
 for(col in c("genres", "genre_1", "genre_2", "genre_3", "genre_4", "genre_5")){
-  edx[, paste0(col, c("_avg_rel", "_sdev", "_nrev")) 
+  edx[, paste0(col, c("_avg", "_sdev", "_nrev")) 
       := list(mean(rating), sd(rating), length(rating)), by = col]
+}
+
+
+# Calculate centered mean rating, standard deviation, and number of reviews for
+# all combinations of genre (taking into account genre order) and user
+
+for(col in c("genres", "genre_1", "genre_2", "genre_3", "genre_4", "genre_5")){
+  edx[, paste0(col, c("_user_avg_rel", "_user_sdev", "_user_nrev")) 
+      := list(mean(rating), sd(rating), length(rating)), by = c("userId", col)]
 }
 
 
