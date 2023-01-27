@@ -89,7 +89,7 @@ edx[, c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5") :=
 edx[, n_genres := rowSums(.SD != "None"), .SDcols = 
       c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5")]
 
-edx[, c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5") := 
+edx[, c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5") :=
       list(factor(genre_1), factor(genre_2), factor(genre_3), factor(genre_4),
            factor(genre_5))]
 
@@ -112,31 +112,39 @@ era_len <- 5
 edx[, movie_era := as.character(floor(as.integer(m_year) / era_len) * era_len)]
 
 
-# Calculate centered mean rating, standard deviation, and number of reviews
-# for each user across all genres
-
-global_mean <- mean(edx$rating)
-
-edx[, c("user_avg_rel", "user_sdev", "user_nrev") := 
-      list(mean(rating) - global_mean, sd(rating), length(rating)), by = userId]
-
-
-# Calculate mean rating, standard deviation, and number of reviews for
+# Calculate mean bias, standard deviation, and number of reviews for
 # all combinations of genre (taking into account genre order) 
 
-for(col in c("genres", "genre_1", "genre_2", "genre_3", "genre_4", "genre_5")){
-  edx[, paste0(col, c("_avg", "_sdev", "_nrev")) 
-      := list(mean(rating), sd(rating), length(rating)), by = col]
+lambda = 20
+global_mean <- mean(edx$rating)
+edx[, unbiased := rating - global_mean]
+
+
+for(col in c("genre_1", "genre_2", "genre_3", 
+             "genres", "movie_era", "ts_year", "ts_hour", "movieId", "userId")){
+  
+  edx[, paste0(col, "_bias") := 
+        sum(unbiased, na.rm = TRUE) / (sum(!is.na(unbiased)) + lambda),,
+      by = col]
+  
+  edx[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_bias")]
 }
 
 
 # Calculate centered mean rating, standard deviation, and number of reviews for
 # all combinations of genre (taking into account genre order) and user
 
-for(col in c("genres", "genre_1", "genre_2", "genre_3", "genre_4", "genre_5")){
-  edx[, paste0(col, c("_user_avg_rel", "_user_sdev", "_user_nrev")) 
-      := list(mean(rating), sd(rating), length(rating)), by = c("userId", col)]
-}
+# for(col in c("genres", "genre_1", "genre_2", "genre_3", "genre_4", "genre_5")){
+#   edx[, paste0(col, c("_user_avg_rel", "_user_sdev", "_user_nrev")) 
+#       := list(mean(rating), sd(rating), length(rating)), by = c("userId", col)]
+# }
+
+
+# Calculate mean rating, standard deviation, and number of reviews
+# for each user across all genres
+
+# edx[, c("user_avg_rel", "user_sdev", "user_nrev") := 
+#       list(mean(rating), sd(rating), length(rating)), by = userId]
 
 
 str(edx)
