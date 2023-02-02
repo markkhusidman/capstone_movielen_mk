@@ -184,3 +184,7 @@ rm(dl, ratings, movies, test_index, temp, movielens, removed, iso, m_year)
 # temp2[, 2] <- log(abs(temp2[, 2]))
 # as.data.frame(temp2) |> ggplot(aes(sd, mean, label = rownames(temp2))) + geom_point() + geom_text()
 # temp
+# edx[, prelim := rating - global_mean]
+# temp3 <- edx[, .(initial = sum(prelim) / (length(prelim) + 20), final = sum(unbiased) / (length(unbiased) + 20) ), by = "genre_1"]
+# temp3[, ratio := initial/final]
+# temp3
