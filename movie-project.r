@@ -109,7 +109,12 @@ edx[, movie_year := year(mdy(paste("1-1-", m_year)))]
 
 # Extract movie era from title
 era_len <- 5
-edx[, movie_era := as.character(floor(as.integer(m_year) / era_len) * era_len)]
+edx[, movie_era := floor(as.integer(m_year) / era_len) * era_len]
+
+
+# Extract user group
+group_size = 20
+edx[, user_group := ceiling(userId / group_size)]
 
 
 # Calculate mean bias, standard deviation, and number of reviews for
@@ -120,15 +125,36 @@ global_mean <- mean(edx$rating)
 edx[, unbiased := rating - global_mean]
 
 
-for(col in c("genre_1", "genre_2", "genre_3", 
-             "genres", "movie_era", "ts_year", "ts_hour", "movieId", "userId")){
+for(col in c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5", "n_genres",
+             "genres", "movie_era", "ts_year", "ts_hour", "movieId", 
+             "user_group", "userId")){
   
-  edx[, paste0(col, "_bias") := 
-        sum(unbiased, na.rm = TRUE) / (sum(!is.na(unbiased)) + lambda),,
+  edx[, paste0(col, "_nrev") := ceiling(length(unbiased) / 100), by = col]
+  
+  edx[, paste0(col, "_nrev_bias") := 
+        sum(unbiased) / (length(unbiased) + lambda),
+      by = eval(paste0(col, "_nrev"))]
+  
+  edx[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_nrev_bias")]
+  
+  edx[, paste0(col, "_bias") := sum(unbiased) / (length(unbiased) + lambda),
       by = col]
   
   edx[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_bias")]
+  edx[, paste0(col, "_nrev") := NULL]
 }
+
+
+# for(col in c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5", "n_genres",
+#              "genres", "movie_era", "ts_year", "ts_hour", "movieId", 
+#              "user_group", "userId")){
+#   
+#   edx[, paste0(col, "_bias") := 
+#         sum(unbiased, na.rm = TRUE) / (sum(!is.na(unbiased)) + lambda),
+#       by = col]
+#   
+#   edx[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_bias")]
+# }
 
 
 # Calculate centered mean rating, standard deviation, and number of reviews for
@@ -151,3 +177,10 @@ str(edx)
 print(edx |> head(15))
 
 rm(dl, ratings, movies, test_index, temp, movielens, removed, iso, m_year)
+
+# temp <- t(edx[, lapply(.SD, function(v){c(sd(v), mean(v))}), .SDcols = colnames(edx[, unbiased:userId_bias])])
+# colnames(temp) <- c("sd", "mean")
+# temp2 <- temp
+# temp2[, 2] <- log(abs(temp2[, 2]))
+# as.data.frame(temp2) |> ggplot(aes(sd, mean, label = rownames(temp2))) + geom_point() + geom_text()
+# temp
