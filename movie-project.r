@@ -80,6 +80,21 @@ print(edx$title[str_detect(edx$title, "\\s\\(\\d+\\)$", negate = TRUE)])
 
 setDT(edx)
 
+
+# Note that one title has two associated movie IDs. We assume this to be an 
+# error
+
+print(edx[, .(n = length(unique(movieId))), by = title][n > 1,])
+
+# Find the most common movie Id associated with this title and replace instances
+# of the less common ID
+
+primary_id <- edx[title == "War of the Worlds (2005)", 
+                  length(title), keyby=movieId][1, movieId]
+
+edx$movieId[which(edx$title == "War of the Worlds (2005)")] <- primary_id
+
+
 # Separate genres and calculate number of genres given. Convert genres to 
 # factors
 
@@ -102,6 +117,7 @@ edx[, c("ts_year", "ts_month", "ts_day", "ts_hour") :=
 
 
 # Extract movie year from title
+
 m_year <- str_match(edx$title, "\\s\\((\\d+)\\)$")[,2]
 
 edx[, movie_year := year(mdy(paste("1-1-", m_year)))]
@@ -117,17 +133,28 @@ group_size = 20
 edx[, user_group := ceiling(userId / group_size)]
 
 
-# Calculate mean bias, standard deviation, and number of reviews for
-# all combinations of genre (taking into account genre order) 
+# Determine which features should be used to calculate "nrev" biases
+print(apply(edx, 2, function(v){length(unique(v))}))
 
-lambda = 20
+
+# Calculate and remove biases
+
+lambda = 5
 global_mean <- mean(edx$rating)
 edx[, unbiased := rating - global_mean]
 
 
 for(col in c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5", "n_genres",
-             "genres", "movie_era", "ts_year", "ts_hour", "movieId", 
-             "user_group", "userId")){
+             "movie_era", "ts_hour", "ts_day", "ts_month", "ts_year")){
+
+  edx[, paste0(col, "_bias") := sum(unbiased) / (length(unbiased) + lambda),
+      by = col]
+
+  edx[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_bias")]
+}
+
+
+for(col in c("genres", "movieId", "user_group", "userId")){
   
   edx[, paste0(col, "_nrev") := ceiling(length(unbiased) / 100), by = col]
   
@@ -143,18 +170,6 @@ for(col in c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5", "n_genres",
   edx[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_bias")]
   edx[, paste0(col, "_nrev") := NULL]
 }
-
-
-# for(col in c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5", "n_genres",
-#              "genres", "movie_era", "ts_year", "ts_hour", "movieId", 
-#              "user_group", "userId")){
-#   
-#   edx[, paste0(col, "_bias") := 
-#         sum(unbiased, na.rm = TRUE) / (sum(!is.na(unbiased)) + lambda),
-#       by = col]
-#   
-#   edx[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_bias")]
-# }
 
 
 # Calculate centered mean rating, standard deviation, and number of reviews for
@@ -174,7 +189,7 @@ for(col in c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5", "n_genres",
 
 
 str(edx)
-print(edx |> head(15))
+print(edx |> head(10))
 
 rm(dl, ratings, movies, test_index, temp, movielens, removed, iso, m_year)
 
