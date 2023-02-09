@@ -101,7 +101,7 @@ edx$movieId[which(edx$title == "War of the Worlds (2005)")] <- primary_id
 edx[, c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5") := 
       tstrsplit(edx$genres, "|", fixed=TRUE, fill = "None", keep = 1:5)]
 
-edx[, n_genres := rowSums(.SD != "None"), .SDcols = 
+edx[, n_genres := factor(rowSums(.SD != "None")), .SDcols = 
       c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5")]
 
 edx[, c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5") :=
@@ -113,14 +113,15 @@ edx[, c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5") :=
 iso <- as_datetime(edx$timestamp)
 
 edx[, c("ts_year", "ts_month", "ts_day", "ts_hour") := 
-      list(year(iso), month(iso), day(iso), hour(iso))]
+      list(factor(year(iso)), factor(month(iso)), 
+           factor(day(iso)), factor(hour(iso)))]
 
 
 # Extract movie year from title
 
 m_year <- str_match(edx$title, "\\s\\((\\d+)\\)$")[,2]
 
-edx[, movie_year := year(mdy(paste("1-1-", m_year)))]
+edx[, movie_year := factor(year(mdy(paste("1-1-", m_year))))]
 
 
 # Calculate and remove biases
@@ -134,22 +135,27 @@ lambda_a_pars <- seq(5, 505, 100)
 lambda_b_pars <- seq(2, 18, 4)
 
 params <- expand.grid(elen_pars, gsize_pars, lambda_a_pars, lambda_b_pars)
+names(params) <- c("elen_pars", "gsize_pars", "lambda_a_pars", "lambda_b_pars")
 
 for(row in 1:nrow(params)){
+  print(params[row,])
+  print("------------------------------")
   rmses <- c()
   
   # Extract movie era from title
   era_len <- params$elen_pars[row]
-  edx[, movie_era := floor(as.integer(m_year) / era_len) * era_len]
+  edx[, movie_era := factor(floor(as.integer(m_year) / era_len) * era_len)]
   
+  # Make sure all variables to be used for joining are factors or characters
+  edx[, c("userId", "movieId") := list(factor(userId), factor(movieId))]
   
   # Extract user group
   group_size = params$gsize_pars[row]
-  edx[, user_group := ceiling(userId / group_size)]
-  
+  edx[, user_group := factor(ceiling(as.integer(userId) / group_size))]
   
   # Determine which features should be used to calculate "nrev" biases
   print(apply(edx, 2, function(v){length(unique(v))}))
+  str(edx)
   
   
   lambda_a = params$lambda_a_pars[row]
@@ -169,26 +175,26 @@ for(row in 1:nrow(params)){
     
       train[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_bias")]
       
-      # TODO: Join bias values with test set
+      test[train[, paste0(col, c("", "_bias"))], on = col]
     }
     
     
-    for(col in c("genres", "movieId", "user_group", "userId")){
-      
-      edx[, paste0(col, "_nrev") := ceiling(length(unbiased) / 100), by = col]
-      
-      edx[, paste0(col, "_nrev_bias") := 
-            sum(unbiased) / (length(unbiased) + lambda_b),
-          by = eval(paste0(col, "_nrev"))]
-      
-      edx[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_nrev_bias")]
-      
-      edx[, paste0(col, "_bias") := sum(unbiased) / (length(unbiased) + lambda_b),
-          by = col]
-      
-      edx[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_bias")]
-      edx[, paste0(col, "_nrev") := NULL]
-    }
+    # for(col in c("genres", "movieId", "user_group", "userId")){
+    #   
+    #   edx[, paste0(col, "_nrev") := ceiling(length(unbiased) / 100), by = col]
+    #   
+    #   edx[, paste0(col, "_nrev_bias") := 
+    #         sum(unbiased) / (length(unbiased) + lambda_b),
+    #       by = eval(paste0(col, "_nrev"))]
+    #   
+    #   edx[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_nrev_bias")]
+    #   
+    #   edx[, paste0(col, "_bias") := sum(unbiased) / (length(unbiased) + lambda_b),
+    #       by = col]
+    #   
+    #   edx[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_bias")]
+    #   edx[, paste0(col, "_nrev") := NULL]
+    # }
   }
 }
 
