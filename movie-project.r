@@ -129,10 +129,10 @@ edx[, movie_year := factor(year(mdy(paste("1-1-", m_year))))]
 global_mean <- mean(edx$rating)
 edx[, unbiased := rating - global_mean]
 
-elen_pars <- seq(5, 20, 5)
-gsize_pars <- seq(20, 100, 20)
-lambda_a_pars <- seq(5, 505, 100)
-lambda_b_pars <- seq(2, 18, 4)
+elen_pars <- seq(5, 25, 10)
+gsize_pars <- seq(20, 100, 40)
+lambda_a_pars <- seq(5, 605, 200)
+lambda_b_pars <- seq(3, 12, 3)
 
 params <- expand.grid(elen_pars, gsize_pars, lambda_a_pars, lambda_b_pars)
 names(params) <- c("elen_pars", "gsize_pars", "lambda_a_pars", "lambda_b_pars")
@@ -161,10 +161,10 @@ for(row in 1:nrow(params)){
   lambda_a = params$lambda_a_pars[row]
   lambda_b = params$lambda_b_pars[row]
   
-  for(i in 1:3){
-    test_index <- createDataPartition(y = edx$rating, times = 1, p = 0.1, list = FALSE)
-    train <- edx[-test_index,]
-    test <- edx[test_index,]
+  for(i in 1:1){
+    validate_index <- createDataPartition(y = edx$rating, times = 1, p = 0.1, list = FALSE)
+    train <- edx[-validate_index,]
+    validate <- edx[validate_index,]
     
     for(col in c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5", "n_genres",
                  "movie_era", "movie_year", "ts_hour", "ts_day", "ts_month", 
@@ -175,7 +175,9 @@ for(row in 1:nrow(params)){
     
       train[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_bias")]
       
-      test[train[, paste0(col, c("", "_bias"))], on = col]
+      validate <- validate[train[, .SD, .SDcols = c(col, paste0(col, "_bias"))], on = col, mult = "first"]
+      # str(train)
+      print(names(validate))
     }
     
     
