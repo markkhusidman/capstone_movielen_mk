@@ -179,7 +179,7 @@ for(row in 1:2){
     
       train[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_bias")]
       
-      validate <- validate[train[, .SD, .SDcols = paste0(col, c("", "_bias"))], on = col, mult = "first", by = col]
+      validate <- validate[train[, .SD[1], .SDcols = paste0(col, "_bias"), by= col], on = col]
       # validate <- cbind(validate, temp[, .SD, .SDcols = paste0(col, "_bias")])
     }
     
@@ -199,7 +199,7 @@ for(row in 1:2){
       train[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_bias")]
       train[, paste0(col, "_nrev") := NULL]
       
-      validate <- validate[train[, .SD, .SDcols = paste0(col, c("", "_bias", "_nrev_bias"))], on = col, mult = "first", by= col]
+      validate <- validate[train[, .SD[1], .SDcols = paste0(col, c("_bias", "_nrev_bias")), by= col], on = col]
       # validate <- cbind(validate, temp[, .SD, .SDcols = paste0(col, c("_bias", "_nrev_bias"))])
     }
   
