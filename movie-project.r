@@ -94,6 +94,8 @@ primary_id <- edx[title == "War of the Worlds (2005)",
 
 edx$movieId[which(edx$title == "War of the Worlds (2005)")] <- primary_id
 
+# Convert movieId to factor
+edx[, movieId := factor(movieId)]
 
 # Separate genres and calculate number of genres given. Convert genres to 
 # factors
@@ -136,32 +138,34 @@ lambda_b_pars <- seq(3, 12, 3)
 
 params <- expand.grid(elen_pars, gsize_pars, lambda_a_pars, lambda_b_pars)
 names(params) <- c("elen_pars", "gsize_pars", "lambda_a_pars", "lambda_b_pars")
+params$rmse <- NaN
+params$sd <- NaN
 
-for(row in 1:nrow(params)){
+for(row in 1:2){
   print(params[row,])
-  print("------------------------------")
+  print("---------------------------------------------------------------")
   rmses <- c()
   
   # Extract movie era from title
   era_len <- params$elen_pars[row]
   edx[, movie_era := factor(floor(as.integer(m_year) / era_len) * era_len)]
   
-  # Make sure all variables to be used for joining are factors or characters
-  edx[, c("userId", "movieId") := list(factor(userId), factor(movieId))]
+  # Make sure all variables to be used as join keys are factors or characters
+  edx[, userId := factor(userId)]
   
   # Extract user group
   group_size = params$gsize_pars[row]
   edx[, user_group := factor(ceiling(as.integer(userId) / group_size))]
   
   # Determine which features should be used to calculate "nrev" biases
-  print(apply(edx, 2, function(v){length(unique(v))}))
-  str(edx)
+  # print(apply(edx, 2, function(v){length(unique(v))}))
+  # str(edx)
   
   
   lambda_a = params$lambda_a_pars[row]
   lambda_b = params$lambda_b_pars[row]
   
-  for(i in 1:1){
+  for(i in 1:3){
     validate_index <- createDataPartition(y = edx$rating, times = 1, p = 0.1, list = FALSE)
     train <- edx[-validate_index,]
     validate <- edx[validate_index,]
@@ -175,30 +179,44 @@ for(row in 1:nrow(params)){
     
       train[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_bias")]
       
-      validate <- validate[train[, .SD, .SDcols = c(col, paste0(col, "_bias"))], on = col, mult = "first"]
-      # str(train)
-      print(names(validate))
+      validate <- validate[train[, .SD, .SDcols = paste0(col, c("", "_bias"))], on = col, mult = "first", by = col]
+      # validate <- cbind(validate, temp[, .SD, .SDcols = paste0(col, "_bias")])
     }
     
+    for(col in c("genres", "movieId", "user_group", "userId")){
+
+      train[, paste0(col, "_nrev") := ceiling(length(unbiased) / 100), by = col]
+
+      train[, paste0(col, "_nrev_bias") :=
+            sum(unbiased) / (length(unbiased) + lambda_b),
+          by = eval(paste0(col, "_nrev"))]
+
+      train[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_nrev_bias")]
+
+      train[, paste0(col, "_bias") := sum(unbiased) / (length(unbiased) + lambda_b),
+          by = col]
+
+      train[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_bias")]
+      train[, paste0(col, "_nrev") := NULL]
+      
+      validate <- validate[train[, .SD, .SDcols = paste0(col, c("", "_bias", "_nrev_bias"))], on = col, mult = "first", by= col]
+      # validate <- cbind(validate, temp[, .SD, .SDcols = paste0(col, c("_bias", "_nrev_bias"))])
+    }
+  
+    print(names(validate))
     
-    # for(col in c("genres", "movieId", "user_group", "userId")){
-    #   
-    #   edx[, paste0(col, "_nrev") := ceiling(length(unbiased) / 100), by = col]
-    #   
-    #   edx[, paste0(col, "_nrev_bias") := 
-    #         sum(unbiased) / (length(unbiased) + lambda_b),
-    #       by = eval(paste0(col, "_nrev"))]
-    #   
-    #   edx[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_nrev_bias")]
-    #   
-    #   edx[, paste0(col, "_bias") := sum(unbiased) / (length(unbiased) + lambda_b),
-    #       by = col]
-    #   
-    #   edx[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_bias")]
-    #   edx[, paste0(col, "_nrev") := NULL]
-    # }
+    col_names <- names(train)
+    bias_cols <- col_names[str_detect(col_names, "_bias")]
+    validate[, pred := sum(.SD) + global_mean, .SDcols = bias_cols]
+    rmses[i] <- sqrt(mean((validate$pred - validate$rating)^2))
   }
+  
+  params$rmse[row] <- mean(rmses)
+  params$sd[row] <- sd(rmses)
 }
+
+print(params |> select(rmse, sd))
+print(params[which.min(params$rmse),])
 
 # Calculate centered mean rating, standard deviation, and number of reviews for
 # all combinations of genre (taking into account genre order) and user
@@ -215,9 +233,8 @@ for(row in 1:nrow(params)){
 # edx[, c("user_avg_rel", "user_sdev", "user_nrev") := 
 #       list(mean(rating), sd(rating), length(rating)), by = userId]
 
-
-str(edx)
-print(edx |> head(10))
+# str(edx)
+# print(edx |> head(10))
 
 rm(dl, ratings, movies, test_index, temp, movielens, removed, iso, m_year)
 
