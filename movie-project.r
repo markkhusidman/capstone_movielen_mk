@@ -141,7 +141,7 @@ names(params) <- c("elen_pars", "gsize_pars", "lambda_a_pars", "lambda_b_pars")
 params$rmse <- NaN
 params$sd <- NaN
 
-for(row in 1:4){
+for(row in 1:nrow(params)){
   print(params[row,])
   print("---------------------------------------------------------------")
   rmses <- c()
@@ -168,13 +168,21 @@ for(row in 1:4){
   for(i in 1:3){
     validate_index <- createDataPartition(y = edx$rating, times = 1, p = 0.1, list = FALSE)
     train <- edx[-validate_index,]
-    temp <- edx[validate_index,]
+    validate <- edx[validate_index,]
+    # temp <- copy(validate)
     
-    validate <- temp |> 
+    # for(sj_col in names(train)){
+    #   validate <- semi_join(validate, train, by = sj_col)
+    # }
+    
+    validate <- validate |>
       semi_join(train, by = "movieId") |> semi_join(train, by = "userId")
     
-    removed <- anti_join(temp, validate, by = c("userId", "movieId"))
-    train <- rbind(train, removed)
+    # removed <- anti_join(temp, validate, by = c("userId", "movieId"))
+    # train <- rbind(train, removed)
+    
+    # print(sum(apply(is.na(validate), 1, any)))
+    # print("Starting bias column joins")
     
     for(col in c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5", "n_genres",
                  "movie_era", "movie_year", "ts_hour", "ts_day", "ts_month", 
@@ -185,7 +193,12 @@ for(row in 1:4){
     
       train[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_bias")]
       
-      validate <- validate[train[, .SD[1], .SDcols = paste0(col, "_bias"), by= col], on = col]
+      # validate <- validate[train[, .SD[1], .SDcols = paste0(col, "_bias"), by= col], on = col, nomatch=NULL]
+      temp <- train[, .SD[1], .SDcols = paste0(col, "_bias"), by= col]
+      validate <- temp[validate, on = col]
+      # validate <- validate[complete.cases(validate)]
+      # print(col)
+      # print(sum(apply(is.na(validate), 1, any)))
     }
     
     for(col in c("genres", "movieId", "user_group", "userId")){
@@ -204,14 +217,17 @@ for(row in 1:4){
       train[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_bias")]
       train[, paste0(col, "_nrev") := NULL]
       
-      validate <- validate[train[, .SD[1], .SDcols = paste0(col, c("_bias", "_nrev_bias")), by= col], on = col]
+      # validate <- validate[train[, .SD[1], .SDcols = paste0(col, c("_bias", "_nrev_bias")), by= col], on = col, nomatch=NULL]
+      temp <- train[, .SD[1], .SDcols = paste0(col, c("_bias", "_nrev_bias")), by = col]
+      validate <- temp[validate, on = col]
+      # validate <- validate[complete.cases(validate)]
+      # print(col)
+      # print(sum(apply(is.na(validate), 1, any)))
     }
   
-    print(names(validate))
-    
+    # print(names(validate))
     col_names <- names(train)
     bias_cols <- col_names[str_detect(col_names, "_bias")]
-    
     validate[, pred := rowSums(.SD) + global_mean, .SDcols = bias_cols]
     
     # Clip predictions such that they are between 0 and 5
@@ -219,6 +235,7 @@ for(row in 1:4){
     validate[, pred := fifelse(pred < 0, 0, pred)]
     
     rmses[i] <- sqrt(mean((validate$pred - validate$rating)^2))
+    print(rmses[i])
   }
   
   params$rmse[row] <- mean(rmses)
@@ -258,3 +275,6 @@ rm(dl, ratings, movies, test_index, temp, movielens, removed, iso, m_year)
 # temp3 <- edx[, .(initial = sum(prelim) / (length(prelim) + 20), final = sum(unbiased) / (length(unbiased) + 20) ), by = "genre_1"]
 # temp3[, ratio := initial/final]
 # temp3
+
+# Return rows with one or more empty values
+# validate[which(apply(is.na(validate), 1, any)),]
