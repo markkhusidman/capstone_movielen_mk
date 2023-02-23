@@ -131,10 +131,15 @@ edx[, movie_year := factor(year(mdy(paste("1-1-", m_year))))]
 global_mean <- mean(edx$rating)
 edx[, unbiased := rating - global_mean]
 
-elen_pars <- seq(5, 25, 10)
-gsize_pars <- seq(20, 100, 40)
-lambda_a_pars <- seq(5, 505, 100)
-lambda_b_pars <- seq(3, 12, 3)
+# elen_pars <- seq(5, 25, 10)
+# gsize_pars <- seq(20, 100, 40)
+# lambda_a_pars <- seq(5, 505, 100)
+# lambda_b_pars <- seq(3, 12, 3)
+
+elen_pars <- c(25)
+gsize_pars <- c(60)
+lambda_a_pars <- c(5)
+lambda_b_pars <- c(6)
 
 params <- expand.grid(elen_pars, gsize_pars, lambda_a_pars, lambda_b_pars)
 names(params) <- c("elen_pars", "gsize_pars", "lambda_a_pars", "lambda_b_pars")
@@ -242,9 +247,8 @@ for(row in 1:nrow(params)){
   params$sd[row] <- sd(rmses)
 }
 
-print(params |> select(rmse, sd))
-print(params[which.min(params$rmse),])
-fwrite(params, "temp_model-tuning.csv")
+print(params[order(params$rmse),])
+# fwrite(params, "temp_model-tuning.csv")
 
 # Calculate centered mean rating, standard deviation, and number of reviews for
 # all combinations of genre (taking into account genre order) and user
