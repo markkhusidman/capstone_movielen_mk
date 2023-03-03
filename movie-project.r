@@ -146,11 +146,11 @@ final_holdout_test[, movie_year := factor(year(mdy(paste("1-1-", m_year_fht))))]
 global_mean <- mean(edx$rating)
 edx[, unbiased := rating - global_mean]
 
-# elen_pars <- seq(5, 25, 10)
-# lambda_pars <- seq(5, 505, 100)
+# elen_pars <- seq(5, 25, 5)
+# lambda_pars <- 2:8
 
-elen_pars <- c(25)
-lambda_pars <- c(5)
+elen_pars <- c(15)
+lambda_pars <- c(6)
 
 params <- expand.grid(elen_pars, lambda_pars)
 names(params) <- c("elen_pars", "lambda_pars")
@@ -216,7 +216,7 @@ for(row in 1:nrow(params)){
 }
 
 print(params[order(params$rmse),])
-# fwrite(params, "temp_model-tuning.csv")
+fwrite(params, "temp_model-tuning2.csv")
 
 
 
@@ -257,7 +257,7 @@ print(params[order(params$rmse),])
 
 
 # Extract movie era from title
-era_len <- 25
+era_len <- 15
 edx[, movie_era := factor(floor(as.integer(m_year_edx) / era_len) * era_len)]
 final_holdout_test[, movie_era := factor(floor(as.integer(m_year_fht) / era_len) * era_len)]
 
@@ -265,20 +265,20 @@ final_holdout_test[, movie_era := factor(floor(as.integer(m_year_fht) / era_len)
 edx[, userId := factor(userId)]
 final_holdout_test[, userId := factor(userId)]
 
-lambda = 5
+lambda = 6
 
 for(col in c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5", "n_genres",
-             "movie_era", "movie_year", "ts_hour", "ts_day", "ts_month", 
+             "movie_era", "movie_year", "ts_hour", "ts_day", "ts_month",
              "ts_year", "movieId", "userId")){
-  
+
   edx[, paste0(col, "_bias") := sum(unbiased) / (length(unbiased) + lambda),
       by = col]
-  
+
   edx[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_bias")]
-  
+
   temp <- edx[, .SD[1], .SDcols = paste0(col, "_bias"), by= col]
   final_holdout_test <- temp[final_holdout_test, on = col]
- 
+
 }
 
 
