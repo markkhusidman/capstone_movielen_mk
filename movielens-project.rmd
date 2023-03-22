@@ -1,0 +1,475 @@
+---
+title: "MovieLens Project"
+author: "Mark Khusidman"
+date: "2023-03-14"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+##########################################################
+# Create edx and final_holdout_test sets 
+##########################################################
+
+# Note: this process could take a couple of minutes
+
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-project.org")
+if(!require(data.table)) install.packages("lubridate", repos = "http://cran.us.r-project.org")
+
+library(tidyverse)
+library(caret)
+library(lubridate)
+library(data.table)
+
+# MovieLens 10M dataset:
+# https://grouplens.org/datasets/movielens/10m/
+# http://files.grouplens.org/datasets/movielens/ml-10m.zip
+
+options(timeout = 120)
+
+dl <- "ml-10M100K.zip"
+if(!file.exists(dl))
+  download.file("https://files.grouplens.org/datasets/movielens/ml-10m.zip", dl)
+
+ratings_file <- "ml-10M100K/ratings.dat"
+if(!file.exists(ratings_file))
+  unzip(dl, ratings_file)
+
+movies_file <- "ml-10M100K/movies.dat"
+if(!file.exists(movies_file))
+  unzip(dl, movies_file)
+
+ratings <- as.data.frame(str_split(read_lines(ratings_file), fixed("::"), simplify = TRUE),
+                         stringsAsFactors = FALSE)
+colnames(ratings) <- c("userId", "movieId", "rating", "timestamp")
+ratings <- ratings %>%
+  mutate(userId = as.integer(userId),
+         movieId = as.integer(movieId),
+         rating = as.numeric(rating),
+         timestamp = as.integer(timestamp))
+
+movies <- as.data.frame(str_split(read_lines(movies_file), fixed("::"), simplify = TRUE),
+                        stringsAsFactors = FALSE)
+colnames(movies) <- c("movieId", "title", "genres")
+movies <- movies %>%
+  mutate(movieId = as.integer(movieId))
+
+movielens <- left_join(ratings, movies, by = "movieId")
+
+# Final hold-out test set will be 10% of MovieLens data
+set.seed(1, sample.kind="Rounding") # if using R 3.6 or later
+# set.seed(1) # if using R 3.5 or earlier
+test_index <- createDataPartition(y = movielens$rating, times = 1, p = 0.1, list = FALSE)
+edx <- movielens[-test_index,]
+temp <- movielens[test_index,]
+
+# Make sure userId and movieId in final hold-out test set are also in edx set
+final_holdout_test <- temp %>% 
+  semi_join(edx, by = "movieId") %>%
+  semi_join(edx, by = "userId")
+
+# Add rows removed from final hold-out test set back into edx set
+removed <- anti_join(temp, final_holdout_test)
+edx <- rbind(edx, removed)
+rm(dl, ratings, movies, test_index, temp, movielens, removed)
+```
+
+## Introduction
+
+A recommendation system is a model which predicts user content ratings based on the content's relevant features and prior user choices. The goal of this project is to create and evaluate a movie recommendation system based on the "10M" version of the "MovieLens" dataset. This dataset contains six columns and 10,000,054 rows in total. Each row represents a single rating of a specific film made by a particular user. The six columns which constitute this dataset are described as follows: *userId* is an integer column which contains a unique identifier for the user making a rating; *movieId*, also an integer column, contains a unique identifier for the movie being rated; "rating" is a numeric column which contains the user's rating for the movie in question; *timestamp* is an integer column containing the number of seconds between the Unix epoch (00:00:00 January 1st, 1970) and the time when the rating was made; *title* is a character column which contains both the *title* and the release year of the movie being rated; *genres*, also a character column, contains a pipe-separated list of all genres associated with the movie being rated. Prior to model training, the data is split into a training set (referred to as the *edx* set) containing 9,000,055 rows and a holdout set containing 999,999 rows. In order to create a movie recommendation system, movie ratings must be modeled based on relevant columns. In the case of this project, some columns used in the model preexist in the original *edx* set while others are derived from preexisting columns. The model evaluated for this project is conceived of as the sum of rating biases found along these columns. In other words, grouping is used to calculate an average bias for each unique value of each relevant column in the *edx* set. The predicted rating corresponding to any combination of these values can then be calculated by taking the sum of their associated biases. Certain hyperparameters which can take multiple values are used during model creation. The specific values that these hyperparameters take in the final model are determined via cross-validation during model training. Before this training can take place, however, the data must be explored and cleaned.
+
+## Methods
+
+Note that the data exploration, data cleaning, and new column creation described in the following section must be applied to both the *edx* and holdout sets; otherwise, the data used for testing will not be representative of the training data. Unless otherwise specified, any data exploration done to the *edx* set yielded similar results when applied to the holdout set. Likewise, all column creation steps performed on the *edx* step were, by necessity, also performed on the holdout set. The holdout data remained completely untouched while implementing the model-tuning loop to prevent data leakage. After all data have been checked for empty values, examination of individual columns can begin.
+
+```{r}
+# Detect any missing values in data
+sprintf("Any missing values in edx?: %s", anyNA(edx))
+```
+
+Because character columns are generally the most prone to error, these are the first columns checked for issues. Specifically, it is important to ensure that all string formats present in the *genres* and *title* columns are known and that none of the values contain formatting errors. This way, future attempts to parse the character data are much less likely to fail. Character matching via regular expressions is used on both the *genres* and *title* columns to check if the formats seen in the first rows are consistent throughout the data.
+
+```{r}
+# Detect any items in the genres column which do not fit the apparent format
+edx$genres[str_detect(edx$genres, "^[A-Z][a-z]+|
++            ^[A-Z][a-z]+\\|[A-Z][a-z]+", negate = TRUE)]
+```
+
+In the case of the *genres* column, there appear to be values present that do not match the initial format. It does not appear that these values will interfere with future parsing, however, and are left as they are.
+
+```{r}
+# Detect any items in the title column which do not fit the apparent format
+edx$title[str_detect(edx$title, "\\s\\(\\d+\\)$", negate = TRUE)]
+```
+
+In the case of the *title* column, all values appear to be consistent with the initial format. Next, it is useful to ensure that there are no outliers present in the "rating" column, as these values would likely be erroneous. An easy way to check for outliers while also getting an idea of data's distribution is to plot a histogram of the data. A histogram of the "rating" column from the *edx* set is shown below.
+
+```{r}
+hist(edx$rating, breaks = 20, xlim = c(0, max(edx$rating)))
+```
+
+Upon viewing the above chart, a few facts become apparent: First, values in the column are bound between 0.5 and 5. Second, all values appear to be multiples of 0.5. Third, it does not appear as though any outliers are present. It is important to note that all further steps are taken after the "data.frame" objects representing the *edx* and holdout datasets are transformed into  "data.table" objects. This is done because the "data.table" library was found to be much faster than the "tidyverse" library when working with this quantity of data.
+
+```{r}
+# Convert data to data.table objects
+setDT(edx)
+setDT(final_holdout_test)
+```
+
+Because the values in the *userId* and *movieId* columns have no inherent meaning apart from their uniqueness, testing for outliers in these columns is not necessary. It is useful, however, to make sure that each value in *movieId* corresponds to only one movie *title*. The code below demonstrates that there is in fact a movie with two corresponding *movieId* values.
+
+```{r}
+# See if any titles have more than one associated movie ID
+edx[, .(id_count = length(unique(movieId))), by = title][id_count > 1,]
+```
+
+To correct this issue, the more prevalent ID associated with "War of the Worlds (2005)" is found and used to replace the less common value. Because the holdout set does not contain any movies that are not present in the training set, checking for more duplications in the holdout set is unnecessary.
+
+```{r}
+# Find the most common movie ID associated with this title and replace instances
+# of the less common ID
+
+primary_id <- edx[title == "War of the Worlds (2005)", 
+                  length(title), keyby=movieId][1, movieId]
+
+edx$movieId[which(edx$title == "War of the Worlds (2005)")] <- primary_id
+
+final_holdout_test$movieId[which(final_holdout_test$title == "War of the Worlds (2005)")] <- primary_id
+```
+
+Before designing and testing a complex model, it is often desirable to first derive a baseline RMSE by testing a very simple model on the data. In this case, always predicting the mean of the *edx* dataset's "rating" column (*global_mean*) represents a suitable first model.
+
+```{r}
+# Evaluate simple model for baseline RMSE
+global_mean <- mean(edx$rating)
+baseline_rmse <- sqrt(mean((global_mean - edx$rating)^2))
+print(sprintf("Baseline RMSE: %f", baseline_rmse))
+```
+
+As shown above, the baseline RMSE yielded by this simple model is slightly over 1.06. The simple model is tested on the *edx* set rather than the holdout set to prevent any kind of tuning based on the holdout set. Now that preliminary data exploration and cleaning have been conducted and a baseline RMSE has been defined, the creation of new columns can begin. First the *genres* column is split into multiple individual genre columns. Before this can be done, however, the number of genre columns to use must be decided. Although values in the *genres* column can contain as many as 8 genres, the vast majority of values do not include so many items. This is demonstrated in the graph below.
+
+```{r}
+# Visualize proportion of rows containing 6, 7, or 8 listed genres 
+genre_count_edx <- str_count(edx$genres, "\\|") + 1
+hist(genre_count_edx, breaks = 8, xlab = "Number of Genres")
+```
+
+In fact, genres 6, 7, and 8 are present in only 0.868% of rows in the *edx* set. As such, only columns corresponding to the first 5 listed genres are created. The total number of non-null genres in each row is also added as a column, and it should be noted that this value is based on the aforementioned 5 individual genre columns. This was found to yield a slightly better result than taking into account all 8 genres potentially found in the *genres* column.
+
+```{r}
+# Separate genres and calculate number of genres given. Convert genres to factors
+separate_genres <- function(dt){
+  
+  dt[, c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5") := 
+        tstrsplit(dt$genres, "|", fixed=TRUE, fill = "None", keep = 1:5)]
+  
+  dt[, n_genres := factor(rowSums(.SD != "None")), .SDcols =
+        c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5")]
+  
+  dt[, c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5") :=
+        list(factor(genre_1), factor(genre_2), factor(genre_3), factor(genre_4),
+             factor(genre_5))]
+}
+
+separate_genres(edx)
+separate_genres(final_holdout_test)
+```
+
+Next, the *timestamp* column was used to extract the year, month, day, and hour of each row's *timestamp*. The "data.table" implementation of various "lubridate" functions are used for this purpose.
+
+```{r}
+# Extract timestamp-related data
+extract_ts <- function(dt){
+  iso <- as_datetime(dt$timestamp)
+  
+  dt[, c("rev_year", "rev_month", "rev_day", "rev_hour") := 
+        list(factor(year(iso)), factor(month(iso)), 
+             factor(day(iso)), factor(hour(iso)))]
+}
+
+extract_ts(edx)
+extract_ts(final_holdout_test)
+```
+
+The movie year is also extracted, this time from the *title* column using string matching and a regular expression group.
+
+```{r}
+# Extract movie year from title
+
+m_year_edx <- str_match(edx$title, "\\s\\((\\d+)\\)$")[,2]
+edx[, movie_year := factor(year(mdy(paste("1-1-", m_year_edx))))]
+
+m_year_fht <- str_match(final_holdout_test$title, "\\s\\((\\d+)\\)$")[,2]
+final_holdout_test[, movie_year := factor(year(mdy(paste("1-1-", m_year_fht))))]
+```
+
+Next, an *rbias* column is created in the *edx* set by subtracting the previously referenced *global_mean* from all values in the "rating" column. This column effectively represents the movie ratings as biases centered around *global_mean*. These bias values will be used to calculate the average biases associated with input values. It is important to note that because the *rbias* column is not an input in of itself, this step is only performed on the *edx* set.
+
+```{r}
+# Create the initial bias column which will be used to calculate average biases
+edx[, rbias := rating - global_mean]
+```
+
+After the aforementioned columns are created, the model-tuning loop is run. Below is the full code for the model-tuning loop. It is not evaluated due to time constraints, but will be explained in detail further below.
+
+```{r, eval=FALSE}
+# Hyperparameters
+elen_pars <- seq(5, 25, 5) # Controls era length
+lambda_pars <- 2:8 # Controls extent of regularization
+
+# Array to hold hyperparameter values and results
+params <- expand.grid(elen_pars, lambda_pars)
+names(params) <- c("elen_pars", "lambda_pars")
+params$rmse <- NaN
+params$sd <- NaN
+
+# Model-tuning loop
+
+for(row in 1:nrow(params)){
+
+  # Extract movie era from movie year
+  era_len <- params$elen_pars[row]
+  edx[, movie_era := factor(floor(as.integer(m_year_edx) / era_len) * era_len)]
+
+  # Make sure all variables to be used as join keys are factors or characters
+  edx[, userId := factor(userId)]
+
+  lambda = params$lambda_pars[row]
+
+  for(i in 1:3){
+    
+    # Split edx dataset into train and validate sets
+    
+    validate_index <- createDataPartition(y = edx$rating, times = 1, p = 0.1, 
+                                          list = FALSE)
+    train <- edx[-validate_index,]
+    temp <- edx[validate_index,]
+
+    validate <- temp |>
+      semi_join(train, by = movieId) |> semi_join(train, by = userId)
+
+    removed <- anti_join(temp, validate, by = c(userId, movieId))
+    train <- rbind(train, removed)
+    
+    # Model-training loop
+    
+    for(col in c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5", "n_genres",
+                 "movie_era", "movie_year", "rev_hour", "rev_day", "rev_month",
+                 "rev_year", "movieId", "userId")){
+      
+      # Calculate regularized average biases based on training set
+      train[, paste0(col, "_bias") := sum(rbias) / (length(rbias) + lambda),
+          by = col]
+      
+      # Remove effect of average biases from training set rbias column
+      train[, rbias := rbias - .SD, .SDcols = paste0(col, "_bias")]
+      
+      # Join average biases with appropriate values in validation set
+      temp <- train[, .SD[1], .SDcols = paste0(col, "_bias"), by= col]
+      validate <- temp[validate, on = col]
+    }
+    
+    # Calculate predictions by summing all bias columns with global_mean
+    col_names <- names(train)
+    bias_cols <- col_names[str_detect(col_names, "_bias")]
+    train[, pred := rowSums(.SD) + global_mean, .SDcols = bias_cols]
+    validate[, pred := rowSums(.SD) + global_mean, .SDcols = bias_cols]
+    
+    # Clip predictions such that they are between 0.5 and 5
+    train[, pred := fifelse(pred > 5, 5, pred)]
+    train[, pred := fifelse(pred < 0.5, 0.5, pred)]
+    validate[, pred := fifelse(pred > 5, 5, pred)]
+    validate[, pred := fifelse(pred < 0.5, 0.5, pred)]
+    
+    # Calculate and report training and validation RMSEs
+    train_rmse <- sqrt(mean((train$pred - train$rating)^2))
+    rmses[i] <- sqrt(mean((validate$pred - validate$rating)^2))
+    print(sprintf("Training RMSE: %f  Validation RMSE: %f", train_rmse, rmses[i]))
+  }
+  
+  # Record mean and sd of RMSEs for each hyperparameter combination
+  params$rmse[row] <- mean(rmses)
+  params$sd[row] <- sd(rmses)
+}
+```
+
+Every iteration of the loop requires setting the values of two hyperparameters: *era_len* and *lambda*. The first of these determines the manner in which the era length column is calculated. This column is calculated by grouping values of the movie year column into eras of a predetermined length, and is calculated for the *edx* set during each full iteration of the model-tuning loop. The second hyperparameter is used to regularize the model by reducing the effect of average biases calculated with few observations. A larger value assigned to *lambda* will cause a larger penalty to be applied to low-observation biases.
+
+```{r, eval=FALSE}
+# Hyperparameters
+elen_pars <- seq(5, 25, 5) # Controls era length
+lambda_pars <- 2:8 # Controls extent of regularization
+```
+
+The array of hyperparameter combinations used for model tuning is created by calling "expand.grid" on a pair of vectors containing all the hyperparameter values to be tested.
+
+```{r, eval=FALSE}
+# Array to hold hyperparameter values and results
+params <- expand.grid(elen_pars, lambda_pars)
+names(params) <- c("elen_pars", "lambda_pars")
+params$rmse <- NaN
+params$sd <- NaN
+```
+
+Once the array of combinations is created, the model-tuning loop begins. First, *era_len* is used to create the movie era column.
+
+```{r, eval=FALSE}
+# Extract movie era from movie year
+era_len <- params$elen_pars[row]
+edx[, movie_era := factor(floor(as.integer(m_year_edx) / era_len) * era_len)]
+```
+
+Next, the *edx* dataset is divided into a new training set and a validation set. The training set will be used to train a model with the chosen hyperparameters, while the validation set will be used to evaluate the resulting model. This iterative training and evaluation is performed 3 times for each combination of hyperparameters. Each of these sub-iterations utilizes different subsets of the *edx* set for training and validation, thereby implementing a form of cross-validation. It should be noted that this is not true K-fold cross-validation because the data is split randomly; Rather, this process is best described as Monte Carlo cross-validation.
+
+```{r, eval=FALSE}
+# Split edx dataset into train and validate sets. Performed 3 times for each
+# hyperparameter combination.
+
+validate_index <- createDataPartition(y = edx$rating, times = 1, p = 0.1, 
+                                          list = FALSE)
+train <- edx[-validate_index,]
+temp <- edx[validate_index,]
+
+validate <- temp |>
+  semi_join(train, by = movieId) |> semi_join(train, by = userId)
+
+removed <- anti_join(temp, validate, by = c(userId, movieId))
+train <- rbind(train, removed)
+```
+
+As mentioned previously, the model in question can be viewed as the sum of the average rating biases associated with each input value. The calculation of these biases involves a third loop, this time over all of the *edx* columns which will be used as inputs in the final model. This final loop is referred to as the model-training loop. During each iteration, the *edx* data is grouped by the column in question. The groups are then aggregated using a regularized mean where the extent of regularization is controlled by the *lambda* hyperparameter. The calculated average biases are then subtracted from the *rbias* column, thereby removing their influence on any subsequent iterations of the model-training loop. Finally, the average biases are joined to their associated input values in the validation set.
+
+```{r, eval=FALSE}
+# Model-training loop
+    
+for(col in c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5", "n_genres",
+              "movie_era", "movie_year", "rev_hour", "rev_day", "rev_month",
+              "rev_year", "movieId", "userId")){
+      
+  # Calculate regularized average biases based on training set
+  train[, paste0(col, "_bias") := sum(rbias) / (length(rbias) + lambda),
+      by = col]
+      
+  # Remove effect of average biases from training set rbias column
+  train[, rbias := rbias - .SD, .SDcols = paste0(col, "_bias")]
+      
+  # Join average biases with appropriate values in validation set
+  temp <- train[, .SD[1], .SDcols = paste0(col, "_bias"), by= col]
+  validate <- temp[validate, on = col]
+}
+```
+
+Once this is done for all input columns, the average biases in each row are all summed along with global_mean to yield predictions. Predictions are made for both the validation set and the training set. This allows training RMSEs, which are used to make sure that the validation RMSEs are reasonable, to be calculated. Because it is known that ratings in these data do not take values lower than 0.5 or higher than 5, predictions are clipped such that they are between those values prior to the calculation of RMSEs.
+
+```{r, eval=FALSE}
+# Calculate predictions by summing all bias columns with global_mean
+col_names <- names(train)
+bias_cols <- col_names[str_detect(col_names, "_bias")]
+train[, pred := rowSums(.SD) + global_mean, .SDcols = bias_cols]
+validate[, pred := rowSums(.SD) + global_mean, .SDcols = bias_cols]
+    
+# Clip predictions such that they are between 0.5 and 5
+train[, pred := fifelse(pred > 5, 5, pred)]
+train[, pred := fifelse(pred < 0.5, 0.5, pred)]
+validate[, pred := fifelse(pred > 5, 5, pred)]
+validate[, pred := fifelse(pred < 0.5, 0.5, pred)]
+    
+# Calculate and report training and validation RMSEs
+train_rmse <- sqrt(mean((train$pred - train$rating)^2))
+rmses[i] <- sqrt(mean((validate$pred - validate$rating)^2))
+print(sprintf("Training RMSE: %f  Validation RMSE: %f", train_rmse, rmses[i]))
+```
+
+The 3 RMSEs yielded by each iteration of the second loop are averaged and recorded, allowing the best combination of hyperparameters to be found. The standard deviation of the 3 RMSEs is also recorded.
+
+```{r, eval=FALSE}
+# Record mean and sd of RMSEs for each hyperparameter combination
+params$rmse[row] <- mean(rmses)
+params$sd[row] <- sd(rmses)
+```
+
+The relationship between average RMSEs and hyperparameters can be effectively visualized with a box plot for each hyperparameter. However, due to the time it would take to run through all combinations of hyperparameters, the code necessary to create these box plots is not evaluated in this report.  Although it is tempting to determine the best combination by simply picking the pair of hyperparameters associated with the lowest average RMSE, the aforementioned box plots reveal that many of the smallest and largest average RMSEs are outliers. As such, the box plots are used to visualize the medians of the average RMSEs associated with each hyperparameter value; Each hyperparameter is then picked individually by selecting the value associated with the lowest median.
+
+Some columns and hyperparameters explored during the design of this model were found to be counterproductive and discarded. The first of these were a pair of columns which contained the number of observations associated with each *userId* and *movieId* value, respectively. These columns used their own *lambda* hyperparameter for average bias calculation; The use of this hyperparameter was discontinued along with the columns. A column which grouped users in a similar manner to how the movie era column grouped movie years was also explored. Like the movie era column, this too had its own hyperparameter to determine group size. Both this column and its associated hyperparameter were discarded in the final model.
+
+## Results
+
+As mentioned in the previous section, the medians of average RMSEs are used to select the best pair of hyperparameters. In this case, the best value for *era_len* was found to be 15 and the best value for *lambda* was found to be 6. The model-training loop (the innermost cycle of the model-tuning loop) was run one more time on the entire *edx* dataset using these hyperparameter values.
+
+```{r}
+# Extract movie era from title using the best era_len value
+era_len <- 15
+edx[, movie_era := factor(floor(as.integer(m_year_edx) / era_len) * era_len)]
+final_holdout_test[, movie_era := factor(floor(as.integer(m_year_fht) / era_len) * era_len)]
+
+# Make sure all variables to be used as join keys are factors or characters
+edx[, userId := factor(userId)]
+final_holdout_test[, userId := factor(userId)]
+
+# Set lambda equal to best value
+lambda = 6
+
+for(col in c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5", "n_genres",
+             "movie_era", "movie_year", "rev_hour", "rev_day", "rev_month",
+             "rev_year", "movieId", "userId")){
+  
+  # Calculate regularized average biases based on edx set
+  edx[, paste0(col, "_bias") := sum(rbias) / (length(rbias) + lambda),
+      by = col]
+  
+  # Remove effect of average biases from edx rbias column
+  edx[, rbias := rbias - .SD, .SDcols = paste0(col, "_bias")]
+  
+  # Join average biases with appropriate values in holdout set
+  temp <- edx[, .SD[1], .SDcols = paste0(col, "_bias"), by= col]
+  final_holdout_test <- temp[final_holdout_test, on = col]
+
+}
+
+# Calculate final predictions by summing all bias columns with global_mean
+col_names <- names(edx)
+bias_cols <- col_names[str_detect(col_names, "_bias")]
+final_holdout_test[, pred := rowSums(.SD) + global_mean, .SDcols = bias_cols]
+
+# Clip final predictions such that they are between 0.5 and 5
+final_holdout_test[, pred := fifelse(pred > 5, 5, pred)]
+final_holdout_test[, pred := fifelse(pred < 0.5, 0.5, pred)]
+
+# Calculate RMSE of final model
+final_holdout_test[, error := pred - rating]
+final_rmse <- sqrt(mean((final_holdout_test$error)^2))
+sprintf("Final RMSE: %f", final_rmse)
+```
+
+As can be seen above, a final RMSE value of slightly over 0.8642 is yielded when applying the resulting model to the holdout dataset.This represents a nearly 18.5% decrease from the baseline RMSE of approximately 1.06 calculated earlier. One way to delve more deeply into the final model's performance is to plot the prediction errors against input columns. This will show the extent to which model performance varies by input. Ideally, model performance would be consistent across inputs. If the model suffers a significant increase in error when confronted with a certain input, this could be a good area of inquiry if one seeks to improve the model's overall performance. In this case, box plots are made comparing the prediction error to 3 input columns: movie era, genre count, and review year.
+
+```{r}
+# Visualize relationship between movie era and model errors
+final_holdout_test |> ggplot(aes(movie_era, error, group = movie_era)) + geom_boxplot()
+```
+
+As demonstrated above, the median errors, box positions, and whisker positions stay fairly consistent across movie eras, with the notable exception of the first box. This first box is likely skewed because few observations are found corresponding to the era of 1905 through 1919. The total range of values in each plot (including outliers) appears to increase somewhat as the eras become more recent, likely due the increase in observations associated with those eras. The next chart compares errors to genre count, which is the number of non-null genres in each row.
+
+```{r}
+# Visualize relationship between first genre and model errors
+final_holdout_test |> ggplot(aes(n_genres, error, group = n_genres)) + 
+geom_boxplot()
+```
+
+Like in the previous graph, the median errors stay fairly consistent across the X axis. Also like the previous graph, genre counts associated with fewer observations tend to have a smaller total range of errors. This is exemplified by the 5th plot, which represents the genre count with the lowest number of observations. The outliers of the 3rd plot appear to be shifted up slightly relative to the others, but is hard to tell if this is a real effect. The final chart compares errors to the year that the rating was made.
+
+```{r}
+# Visualize relationship between review year and model errors
+final_holdout_test |> ggplot(aes(rev_year, error, group = rev_year)) + 
+geom_boxplot()
+```
+
+As with the other charts, the median errors are fairly consistent apart from an initial single-observation value. The general correlation between total error range and number of observations is also evident to a small extent. One interesting effect seen in this graph is that box and whisker sizes appear to decrease over the X axis. This effect appears to be correlated with the variance of ratings made in particular years. In other words, an input value associated with lower rating variance seems to also be associated with lower error variance.
+
+## Conclusion
+
+Many steps were taken over the course of this project in service of its goal: to design and implement a movie recommendation system. First, a simple model was defined to yield a baseline RMSE. The data were then explored in preparation for cleaning and the creation of new columns. The only data cleaning found to be necessary was the removal of a second movie ID associated with a particular film.  An assortment of new columns were created based on the existing data: 5 individual genre columns and a column containing the quantity of non-null genres were all derived from the existing *genres* column; movie year and movie era were both derived from the existing *title* column; and columns containing the hour, day, month, and year that each rating was created had been derived from the existing *timestamp* column. These new columns were used along with the existing *userId* and *movieId* columns to train a model whose function was based on the average rating biases associated with model inputs. The values of two hyperparameters, *era_len* and *lambda*, were determined via a model-tuning loop before the final model was trained. These hyperparameters affected how the movie era column was calculated and the extent to which average biases were regularized, respectively. Once the best hyperparameter values were found and used to train the final model, this model was evaluated on the holdout dataset. This evaluation yielded an RMSE of 0.8642, representing a significant improvement over the baseline RMSE calculated earlier. One limitation of this project was the failure to test every possible combination of the input columns available; some of the original columns and two derived columns (which had not yet been mentioned in this section) were not used in the final model. It is therefore possible that a different combination of the available columns would yield a better RMSE when evaluated on the holdout set. This failure was due to time constraints. Another limitation of this work, also resulting from time constraints, was the relatively low number of iterations devoted to each hyperparameter combination in the model-tuning loop. The use of 10 iterations rather than 3 would simplify hyperparameter selection by making the choice more obvious. Both of these limitations represent opportunities for improvement in future related work. 
