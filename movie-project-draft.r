@@ -66,9 +66,14 @@ removed <- anti_join(temp, final_holdout_test)
 edx <- rbind(edx, removed)
 rm(dl, ratings, movies, test_index, temp, movielens, removed)
 
-print(edx$genres[str_detect(edx$genres, "[A-Z][a-z]+|
-+            [A-Z][a-z]+\\|+[A-Z][a-z]", negate = TRUE)])
+print(edx$genres[str_detect(edx$genres, "^[A-Z][a-z]+|
++            ^[A-Z][a-z]+\\|[A-Z][a-z]+", negate = TRUE)])
+
+print(final_holdout_test$genres[str_detect(final_holdout_test$genres, "^[A-Z][a-z]+|
++            ^[A-Z][a-z]+\\|[A-Z][a-z]+", negate = TRUE)])
+
 print(edx$title[str_detect(edx$title, "\\s\\(\\d+\\)$", negate = TRUE)])
+print(final_holdout_test$title[str_detect(final_holdout_test$title, "\\s\\(\\d+\\)$", negate = TRUE)])
 
 # temp <- createDataPartition(y = edx$rating, times = 1, p = 0.15, list = FALSE)
 # edx <- edx[temp,]

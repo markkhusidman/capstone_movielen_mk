@@ -66,26 +66,50 @@ removed <- anti_join(temp, final_holdout_test)
 edx <- rbind(edx, removed)
 rm(dl, ratings, movies, test_index, temp, movielens, removed)
 
+print("---------------------------------------------------------------")
 
-print(edx$genres[str_detect(edx$genres, "[A-Z][a-z]+|
-+            [A-Z][a-z]+\\|+[A-Z][a-z]", negate = TRUE)])
+# Detect any missing values in data
+
+print(sprintf("Any missing values in edx?: %s", anyNA(edx)))
+print(sprintf("Any missing values in holdout?: %s", anyNA(final_holdout_test)))
+print("---------------------------------------------------------------")
+
+# Detect any items in the genres column which do not fit the apparent format
+
+print("Genres in edx which do not fit format:")
+print(edx$genres[str_detect(edx$genres, "^[A-Z][a-z]+|
++            ^[A-Z][a-z]+\\|[A-Z][a-z]+", negate = TRUE)])
+print("------------")
+
+print("Genres in holdout which do not fit format:")
+print(final_holdout_test$genres[str_detect(final_holdout_test$genres, "^[A-Z][a-z]+|
++            ^[A-Z][a-z]+\\|[A-Z][a-z]+", negate = TRUE)])
+print("---------------------------------------------------------------")
+
+# Detect any items in the title column which do not fit the apparent format
+
+print("Titles in edx which do not fit format:")
 print(edx$title[str_detect(edx$title, "\\s\\(\\d+\\)$", negate = TRUE)])
+print("------------")
+print("Titles in holdout which do not fit format:")
+print(final_holdout_test$title[str_detect(final_holdout_test$title, "\\s\\(\\d+\\)$", negate = TRUE)])
 
+# Visualize rating distribution in datasets
+hist(edx$rating, breaks = 20, xlim = c(0, max(edx$rating)), xlab = "Rating")
+hist(final_holdout_test$rating, breaks = 20, xlim = c(0, max(edx$rating)),  xlab = "Rating")
 
-# Genres 6, 7, and 8 collectively account for only 0.868% of data
-
-# data.table method to separate genres column is 16.267 times faster than  
-# analogous tidyverse method (separate)
-
+# Convert data to data.table objects
 setDT(edx)
 setDT(final_holdout_test)
 
-# Note that one title has two associated movie IDs. We assume this to be an 
-# error
+print("---------------------------------------------------------------")
 
-print(edx[, .(n = length(unique(movieId))), by = title][n > 1,])
+# See if any titles have more than one associated movie ID
 
-# Find the most common movie Id associated with this title and replace instances
+print("Titles with more than one movie ID:")
+print(edx[, .(id_count = length(unique(movieId))), by = title][id_count > 1,])
+
+# Find the most common movie ID associated with this title and replace instances
 # of the less common ID
 
 primary_id <- edx[title == "War of the Worlds (2005)", 
@@ -94,9 +118,24 @@ primary_id <- edx[title == "War of the Worlds (2005)",
 edx$movieId[which(edx$title == "War of the Worlds (2005)")] <- primary_id
 final_holdout_test$movieId[which(final_holdout_test$title == "War of the Worlds (2005)")] <- primary_id
 
-# Convert movieId to factor
+# Convert movieId column to factor. All future input columns must be factors or 
+# characters due to data.table joining behavior
+
 edx[, movieId := factor(movieId)]
 final_holdout_test[, movieId := factor(movieId)]
+
+print("---------------------------------------------------------------")
+
+# Evaluate simple model for baseline RMSE
+global_mean <- mean(edx$rating)
+baseline_rmse <- sqrt(mean((global_mean - edx$rating)^2))
+print(sprintf("Baseline RMSE: %f", baseline_rmse))
+
+# Visualize proportion of rows containing 6, 7, or 8 listed genres 
+genre_count_edx <- str_count(edx$genres, "\\|") + 1
+hist(genre_count_edx, breaks = 8, xlab = "Number of Genres")
+genre_count_holdout <- str_count(final_holdout_test$genres, "\\|") + 1
+hist(genre_count_holdout, breaks = 8, xlab = "Number of Genres")
 
 # Separate genres and calculate number of genres given. Convert genres to 
 # factors
@@ -106,7 +145,7 @@ separate_genres <- function(dt){
   dt[, c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5") := 
         tstrsplit(dt$genres, "|", fixed=TRUE, fill = "None", keep = 1:5)]
   
-  dt[, n_genres := factor(rowSums(.SD != "None")), .SDcols = 
+  dt[, n_genres := factor(rowSums(.SD != "None")), .SDcols =
         c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5")]
   
   dt[, c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5") :=
@@ -117,13 +156,12 @@ separate_genres <- function(dt){
 separate_genres(edx)
 separate_genres(final_holdout_test)
 
-
-# Extract time-stamp data
+# Extract timestamp-related data
 
 extract_ts <- function(dt){
   iso <- as_datetime(dt$timestamp)
   
-  dt[, c("ts_year", "ts_month", "ts_day", "ts_hour") := 
+  dt[, c("rev_year", "rev_month", "rev_day", "rev_hour") := 
         list(factor(year(iso)), factor(month(iso)), 
              factor(day(iso)), factor(hour(iso)))]
 }
@@ -131,41 +169,44 @@ extract_ts <- function(dt){
 extract_ts(edx)
 extract_ts(final_holdout_test)
 
-
 # Extract movie year from title
-
 m_year_edx <- str_match(edx$title, "\\s\\((\\d+)\\)$")[,2]
 edx[, movie_year := factor(year(mdy(paste("1-1-", m_year_edx))))]
-
 m_year_fht <- str_match(final_holdout_test$title, "\\s\\((\\d+)\\)$")[,2]
 final_holdout_test[, movie_year := factor(year(mdy(paste("1-1-", m_year_fht))))]
 
 
-# Calculate and remove biases
+# Create the initial bias column which will be used to calculate average biases
+edx[, rbias := rating - global_mean]
 
-global_mean <- mean(edx$rating)
-edx[, unbiased := rating - global_mean]
+# Hyperparameter values to be used in model-tuning loop. The commented lines
+# represent the full range of values tested during model tuning. The 
+# uncommented lines contain the best hyperparameter values found. 
 
 # elen_pars <- seq(5, 25, 5)
 # lambda_pars <- 2:8
 
-elen_pars <- c(15)
-lambda_pars <- c(6)
+elen_pars <- c(15)  # Controls era length
+lambda_pars <- c(6) # Controls extent of regularization
 
+# Array to hold hyperparameter values and results
 params <- expand.grid(elen_pars, lambda_pars)
 names(params) <- c("elen_pars", "lambda_pars")
 params$rmse <- NaN
 params$sd <- NaN
 
+print("---------------------------------------------------------------")
 
-
+# Model-tuning loop
+print("Starting model-tuning loop")
 
 for(row in 1:nrow(params)){
-  print(params[row,])
-  print("---------------------------------------------------------------")
+  print("------------")
+  print(sprintf("Testing era_len of %g and lambda of %g:", params[row, 1], params[row, 2]))
+  print("------------")
   rmses <- c()
 
-  # Extract movie era from title
+  # Extract movie era from movie year
   era_len <- params$elen_pars[row]
   edx[, movie_era := factor(floor(as.integer(m_year_edx) / era_len) * era_len)]
 
@@ -175,6 +216,9 @@ for(row in 1:nrow(params)){
   lambda = params$lambda_pars[row]
 
   for(i in 1:3){
+    
+    # Split edx dataset into train and validate sets
+    
     validate_index <- createDataPartition(y = edx$rating, times = 1, p = 0.1, list = FALSE)
     train <- edx[-validate_index,]
     temp <- edx[validate_index,]
@@ -184,79 +228,66 @@ for(row in 1:nrow(params)){
 
     removed <- anti_join(temp, validate, by = c("userId", "movieId"))
     train <- rbind(train, removed)
-
+    
+    # Model-training loop
+    
     for(col in c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5", "n_genres",
-                 "movie_era", "movie_year", "ts_hour", "ts_day", "ts_month",
-                 "ts_year", "movieId", "userId")){
-
-      train[, paste0(col, "_bias") := sum(unbiased) / (length(unbiased) + lambda),
+                 "movie_era", "movie_year", "rev_hour", "rev_day", "rev_month",
+                 "rev_year", "movieId", "userId")){
+      
+      # Calculate regularized average biases based on training set
+      train[, paste0(col, "_bias") := sum(rbias) / (length(rbias) + lambda),
           by = col]
-
-      train[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_bias")]
-
+      
+      # Remove effect of average biases from training set rbias column
+      train[, rbias := rbias - .SD, .SDcols = paste0(col, "_bias")]
+      
+      # Join average biases with appropriate values in validation set
       temp <- train[, .SD[1], .SDcols = paste0(col, "_bias"), by= col]
       validate <- temp[validate, on = col]
     }
-
-    # print(names(validate))
+    
+    # Calculate predictions by summing all bias columns with global_mean
     col_names <- names(train)
     bias_cols <- col_names[str_detect(col_names, "_bias")]
+    train[, pred := rowSums(.SD) + global_mean, .SDcols = bias_cols]
     validate[, pred := rowSums(.SD) + global_mean, .SDcols = bias_cols]
-
-    # Clip predictions such that they are between 0 and 5
+    
+    # Clip predictions such that they are between 0.5 and 5
+    train[, pred := fifelse(pred > 5, 5, pred)]
+    train[, pred := fifelse(pred < 0.5, 0.5, pred)]
     validate[, pred := fifelse(pred > 5, 5, pred)]
-    validate[, pred := fifelse(pred < 0, 0, pred)]
-
+    validate[, pred := fifelse(pred < 0.5, 0.5, pred)]
+    
+    # Calculate and report training and validation RMSEs
+    train_rmse <- sqrt(mean((train$pred - train$rating)^2))
     rmses[i] <- sqrt(mean((validate$pred - validate$rating)^2))
-    print(rmses[i])
+    print(sprintf("Training RMSE: %f  Validation RMSE: %f", train_rmse, rmses[i]))
   }
-
+  
+  # Record mean and sd of RMSEs for each hyperparameter combination
   params$rmse[row] <- mean(rmses)
   params$sd[row] <- sd(rmses)
 }
+print("------------")
+print("Finished model-tuning loop")
+print("---------------------------------------------------------------")
 
-print(params[order(params$rmse),])
-fwrite(params, "temp_model-tuning2.csv")
-
-
-
-
-# Calculate centered mean rating, standard deviation, and number of reviews for
-# all combinations of genre (taking into account genre order) and user
-
-# for(col in c("genres", "genre_1", "genre_2", "genre_3", "genre_4", "genre_5")){
-#   edx[, paste0(col, c("_user_avg_rel", "_user_sdev", "_user_nrev")) 
-#       := list(mean(rating), sd(rating), length(rating)), by = c("userId", col)]
-# }
+# Uncomment below code to record hyperparameter array in csv file
+# fwrite(params, "temp_model-tuning2.csv")
 
 
-# Calculate mean rating, standard deviation, and number of reviews
-# for each user across all genres
+# Visualize relationship between hyperparameter values and validation RMSE.
+# Will only work if model-tuning loop is run for multiple values.
 
-# edx[, c("user_avg_rel", "user_sdev", "user_nrev") := 
-#       list(mean(rating), sd(rating), length(rating)), by = userId]
+# (params |> ggplot(aes(lambda_pars, rmse, group = lambda_pars)) +
+#   geom_boxplot() + geom_point())
 
-# str(edx)
-# print(edx |> head(10))
-
-# temp <- t(edx[, lapply(.SD, function(v){c(sd(v), mean(v))}), .SDcols = colnames(edx[, unbiased:userId_bias])])
-# colnames(temp) <- c("sd", "mean")
-# temp2 <- temp
-# temp2[, 2] <- log(abs(temp2[, 2]))
-# as.data.frame(temp2) |> ggplot(aes(sd, mean, label = rownames(temp2))) + geom_point() + geom_text()
-# temp
-# edx[, prelim := rating - global_mean]
-# temp3 <- edx[, .(initial = sum(prelim) / (length(prelim) + 20), final = sum(unbiased) / (length(unbiased) + 20) ), by = "genre_1"]
-# temp3[, ratio := initial/final]
-# temp3
-
-# Return rows with one or more empty values
-# validate[which(apply(is.na(validate), 1, any)),]
+# params |> ggplot(aes(elen_pars, rmse, group = elen_pars)) +
+#   geom_boxplot() + geom_point()
 
 
-
-
-# Extract movie era from title
+# Extract movie era from title using the best era_len value
 era_len <- 15
 edx[, movie_era := factor(floor(as.integer(m_year_edx) / era_len) * era_len)]
 final_holdout_test[, movie_era := factor(floor(as.integer(m_year_fht) / era_len) * era_len)]
@@ -265,30 +296,41 @@ final_holdout_test[, movie_era := factor(floor(as.integer(m_year_fht) / era_len)
 edx[, userId := factor(userId)]
 final_holdout_test[, userId := factor(userId)]
 
+# Set lambda equal to best value
 lambda = 6
 
 for(col in c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5", "n_genres",
-             "movie_era", "movie_year", "ts_hour", "ts_day", "ts_month",
-             "ts_year", "movieId", "userId")){
-
-  edx[, paste0(col, "_bias") := sum(unbiased) / (length(unbiased) + lambda),
+             "movie_era", "movie_year", "rev_hour", "rev_day", "rev_month",
+             "rev_year", "movieId", "userId")){
+  
+  # Calculate regularized average biases based on edx set
+  edx[, paste0(col, "_bias") := sum(rbias) / (length(rbias) + lambda),
       by = col]
-
-  edx[, unbiased := unbiased - .SD, .SDcols = paste0(col, "_bias")]
-
+  
+  # Remove effect of average biases from edx rbias column
+  edx[, rbias := rbias - .SD, .SDcols = paste0(col, "_bias")]
+  
+  # Join average biases with appropriate values in holdout set
   temp <- edx[, .SD[1], .SDcols = paste0(col, "_bias"), by= col]
   final_holdout_test <- temp[final_holdout_test, on = col]
 
 }
 
-
+# Calculate final predictions by summing all bias columns with global_mean
 col_names <- names(edx)
 bias_cols <- col_names[str_detect(col_names, "_bias")]
 final_holdout_test[, pred := rowSums(.SD) + global_mean, .SDcols = bias_cols]
 
-# Clip predictions such that they are between 0 and 5
+# Clip final predictions such that they are between 0.5 and 5
 final_holdout_test[, pred := fifelse(pred > 5, 5, pred)]
-final_holdout_test[, pred := fifelse(pred < 0, 0, pred)]
+final_holdout_test[, pred := fifelse(pred < 0.5, 0.5, pred)]
 
-final_rmse <- sqrt(mean((final_holdout_test$pred - final_holdout_test$rating)^2))
-print(final_rmse)
+# Calculate RMSE of final model
+final_holdout_test[, error := pred - rating]
+final_rmse <- sqrt(mean((final_holdout_test$error)^2))
+print(sprintf("Final RMSE: %f", final_rmse))
+
+# Visualize relationship between model inputs and model errors
+final_holdout_test |> ggplot(aes(movie_era, error, group = movie_era)) + geom_boxplot()
+final_holdout_test |> ggplot(aes(genre_1, error, group = genre_1)) + geom_boxplot()
+final_holdout_test |> ggplot(aes(rev_year, error, group = rev_year)) + geom_boxplot()
