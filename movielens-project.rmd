@@ -112,7 +112,7 @@ In the case of the *title* column, all values appear to be consistent with the i
 hist(edx$rating, breaks = 20, xlim = c(0, max(edx$rating)))
 ```
 
-Upon viewing the above chart, a few facts become apparent: First, values in the column are bound between 0.5 and 5. Second, all values appear to be multiples of 0.5. Third, it does not appear as though any outliers are present. It is important to note that all further steps are taken after the "data.frame" objects representing the *edx* and holdout datasets are transformed into  "data.table" objects. This is done because the "data.table" library was found to be much faster than the "tidyverse" library when working with this quantity of data.
+Upon viewing the above chart, a few facts become apparent: First, values in the column are bound between 0.5 and 5. Second, all values appear to be multiples of 0.5. Third, it does not appear as though any outliers are present. It is important to note that all further steps are taken after the "data.frame" objects representing the *edx* and holdout datasets are transformed into "data.table" objects. This is done because the data.table library was found to be much faster than the "tidyverse" library when working with this quantity of data.
 
 ```{r}
 # Convert data to data.table objects
@@ -147,7 +147,7 @@ Before designing and testing a complex model, it is often desirable to first der
 # Evaluate simple model for baseline RMSE
 global_mean <- mean(edx$rating)
 baseline_rmse <- sqrt(mean((global_mean - edx$rating)^2))
-print(sprintf("Baseline RMSE: %f", baseline_rmse))
+sprintf("Baseline RMSE: %f", baseline_rmse)
 ```
 
 As shown above, the baseline RMSE yielded by this simple model is slightly over 1.06. The simple model is tested on the *edx* set rather than the holdout set to prevent any kind of tuning based on the holdout set. Now that preliminary data exploration and cleaning have been conducted and a baseline RMSE has been defined, the creation of new columns can begin. First the *genres* column is split into multiple individual genre columns. Before this can be done, however, the number of genre columns to use must be decided. Although values in the *genres* column can contain as many as 8 genres, the vast majority of values do not include so many items. This is demonstrated in the graph below.
@@ -176,7 +176,6 @@ separate_genres <- function(dt){
 }
 
 separate_genres(edx)
-separate_genres(final_holdout_test)
 ```
 
 Next, the *timestamp* column was used to extract the year, month, day, and hour of each row's *timestamp*. The "data.table" implementation of various "lubridate" functions are used for this purpose.
@@ -192,7 +191,6 @@ extract_ts <- function(dt){
 }
 
 extract_ts(edx)
-extract_ts(final_holdout_test)
 ```
 
 The movie year is also extracted, this time from the *title* column using string matching and a regular expression group.
@@ -202,9 +200,6 @@ The movie year is also extracted, this time from the *title* column using string
 
 m_year_edx <- str_match(edx$title, "\\s\\((\\d+)\\)$")[,2]
 edx[, movie_year := factor(year(mdy(paste("1-1-", m_year_edx))))]
-
-m_year_fht <- str_match(final_holdout_test$title, "\\s\\((\\d+)\\)$")[,2]
-final_holdout_test[, movie_year := factor(year(mdy(paste("1-1-", m_year_fht))))]
 ```
 
 Next, an *rbias* column is created in the *edx* set by subtracting the previously referenced *global_mean* from all values in the "rating" column. This column effectively represents the movie ratings as biases centered around *global_mean*. These bias values will be used to calculate the average biases associated with input values. It is important to note that because the *rbias* column is not an input in of itself, this step is only performed on the *edx* set.
@@ -288,7 +283,7 @@ for(row in 1:nrow(params)){
     # Calculate and report training and validation RMSEs
     train_rmse <- sqrt(mean((train$pred - train$rating)^2))
     rmses[i] <- sqrt(mean((validate$pred - validate$rating)^2))
-    print(sprintf("Training RMSE: %f  Validation RMSE: %f", train_rmse, rmses[i]))
+    sprintf("Training RMSE: %f  Validation RMSE: %f", train_rmse, rmses[i])
   }
   
   # Record mean and sd of RMSEs for each hyperparameter combination
@@ -381,7 +376,7 @@ validate[, pred := fifelse(pred < 0.5, 0.5, pred)]
 # Calculate and report training and validation RMSEs
 train_rmse <- sqrt(mean((train$pred - train$rating)^2))
 rmses[i] <- sqrt(mean((validate$pred - validate$rating)^2))
-print(sprintf("Training RMSE: %f  Validation RMSE: %f", train_rmse, rmses[i]))
+sprintf("Training RMSE: %f  Validation RMSE: %f", train_rmse, rmses[i])
 ```
 
 The 3 RMSEs yielded by each iteration of the second loop are averaged and recorded, allowing the best combination of hyperparameters to be found. The standard deviation of the 3 RMSEs is also recorded.
@@ -398,9 +393,15 @@ Some columns and hyperparameters explored during the design of this model were f
 
 ## Results
 
-As mentioned in the previous section, the medians of average RMSEs are used to select the best pair of hyperparameters. In this case, the best value for *era_len* was found to be 15 and the best value for *lambda* was found to be 6. The model-training loop (the innermost cycle of the model-tuning loop) was run one more time on the entire *edx* dataset using these hyperparameter values.
+The holdout set is now preprocessed in the same manner as the *edx* set. As mentioned in the previous section, the medians of average RMSEs are used to select the best pair of hyperparameters. In this case, the best value for *era_len* was found to be 15 and the best value for *lambda* was found to be 6. The model-training loop (the innermost cycle of the model-tuning loop) was run one more time on the entire *edx* dataset using these hyperparameter values.
 
 ```{r}
+# Preprocess holdout dataset
+separate_genres(final_holdout_test)
+extract_ts(final_holdout_test)
+m_year_fht <- str_match(final_holdout_test$title, "\\s\\((\\d+)\\)$")[,2]
+final_holdout_test[, movie_year := factor(year(mdy(paste("1-1-", m_year_fht))))]
+
 # Extract movie era from title using the best era_len value
 era_len <- 15
 edx[, movie_era := factor(floor(as.integer(m_year_edx) / era_len) * era_len)]
@@ -445,7 +446,7 @@ final_rmse <- sqrt(mean((final_holdout_test$error)^2))
 sprintf("Final RMSE: %f", final_rmse)
 ```
 
-As can be seen above, a final RMSE value of slightly over 0.8642 is yielded when applying the resulting model to the holdout dataset.This represents a nearly 18.5% decrease from the baseline RMSE of approximately 1.06 calculated earlier. One way to delve more deeply into the final model's performance is to plot the prediction errors against input columns. This will show the extent to which model performance varies by input. Ideally, model performance would be consistent across inputs. If the model suffers a significant increase in error when confronted with a certain input, this could be a good area of inquiry if one seeks to improve the model's overall performance. In this case, box plots are made comparing the prediction error to 3 input columns: movie era, genre count, and review year.
+As can be seen above, a final RMSE value of slightly over 0.8642 is yielded when applying the resulting model to the holdout set.This represents a nearly 18.5% decrease from the baseline RMSE of approximately 1.06 calculated earlier. One way to delve more deeply into the final model's performance is to plot the prediction errors against input columns. This will show the extent to which model performance varies by input. Ideally, model performance would be consistent across inputs. If the model suffers a significant increase in error when confronted with a certain input, this could be a good area of inquiry if one seeks to improve the model's overall performance. In this case, box plots are made comparing the prediction error to 3 input columns: movie era, genre count, and review year.
 
 ```{r}
 # Visualize relationship between movie era and model errors
@@ -472,4 +473,4 @@ As with the other charts, the median errors are fairly consistent apart from an 
 
 ## Conclusion
 
-Many steps were taken over the course of this project in service of its goal: to design and implement a movie recommendation system. First, a simple model was defined to yield a baseline RMSE. The data were then explored in preparation for cleaning and the creation of new columns. The only data cleaning found to be necessary was the removal of a second movie ID associated with a particular film.  An assortment of new columns were created based on the existing data: 5 individual genre columns and a column containing the quantity of non-null genres were all derived from the existing *genres* column; movie year and movie era were both derived from the existing *title* column; and columns containing the hour, day, month, and year that each rating was created had been derived from the existing *timestamp* column. These new columns were used along with the existing *userId* and *movieId* columns to train a model whose function was based on the average rating biases associated with model inputs. The values of two hyperparameters, *era_len* and *lambda*, were determined via a model-tuning loop before the final model was trained. These hyperparameters affected how the movie era column was calculated and the extent to which average biases were regularized, respectively. Once the best hyperparameter values were found and used to train the final model, this model was evaluated on the holdout dataset. This evaluation yielded an RMSE of 0.8642, representing a significant improvement over the baseline RMSE calculated earlier. One limitation of this project was the failure to test every possible combination of the input columns available; some of the original columns and two derived columns (which had not yet been mentioned in this section) were not used in the final model. It is therefore possible that a different combination of the available columns would yield a better RMSE when evaluated on the holdout set. This failure was due to time constraints. Another limitation of this work, also resulting from time constraints, was the relatively low number of iterations devoted to each hyperparameter combination in the model-tuning loop. The use of 10 iterations rather than 3 would simplify hyperparameter selection by making the choice more obvious. Both of these limitations represent opportunities for improvement in future related work. 
+Many steps were taken over the course of this project in service of its goal to design and implement a movie recommendation system. First, a simple model was defined to yield a baseline RMSE. The data were then explored in preparation for cleaning and the creation of new columns. The only data cleaning found to be necessary was the removal of a second movie ID associated with a particular film.  An assortment of new columns were created based on the existing data: 5 individual genre columns and a column containing the quantity of non-null genres were all derived from the existing *genres* column; movie year and movie era were both derived from the existing *title* column; and columns containing the hour, day, month, and year that each rating was created had been derived from the existing *timestamp* column. These new columns were used along with the existing *userId* and *movieId* columns to train a model whose function was based on the average rating biases associated with model inputs. The values of two hyperparameters, *era_len* and *lambda*, were determined via a model-tuning loop before the final model was trained. These hyperparameters affected how the movie era column was calculated and the extent to which average biases were regularized, respectively. Once the best hyperparameter values were found and used to train the final model, this model was evaluated on the holdout dataset. This evaluation yielded an RMSE of 0.8642, representing a significant improvement over the baseline RMSE calculated earlier. One limitation of this project was the failure to test every possible combination of the input columns available; some of the original columns and two derived columns (which had not yet been mentioned in this section) were not used in the final model. It is therefore possible that a different combination of the available columns would yield a better RMSE when evaluated on the holdout set. This failure was due to time constraints. Another limitation of this work, also resulting from time constraints, was the relatively low number of iterations devoted to each hyperparameter combination in the model-tuning loop. The use of 10 iterations rather than 3 would simplify hyperparameter selection by making the choice more obvious. Both of these limitations represent opportunities for improvement in future related work. 

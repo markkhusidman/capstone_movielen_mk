@@ -64,6 +64,7 @@ final_holdout_test <- temp %>%
 # Add rows removed from final hold-out test set back into edx set
 removed <- anti_join(temp, final_holdout_test)
 edx <- rbind(edx, removed)
+
 rm(dl, ratings, movies, test_index, temp, movielens, removed)
 
 print("---------------------------------------------------------------")
@@ -154,7 +155,6 @@ separate_genres <- function(dt){
 }
 
 separate_genres(edx)
-separate_genres(final_holdout_test)
 
 # Extract timestamp-related data
 
@@ -167,14 +167,10 @@ extract_ts <- function(dt){
 }
 
 extract_ts(edx)
-extract_ts(final_holdout_test)
 
 # Extract movie year from title
 m_year_edx <- str_match(edx$title, "\\s\\((\\d+)\\)$")[,2]
 edx[, movie_year := factor(year(mdy(paste("1-1-", m_year_edx))))]
-m_year_fht <- str_match(final_holdout_test$title, "\\s\\((\\d+)\\)$")[,2]
-final_holdout_test[, movie_year := factor(year(mdy(paste("1-1-", m_year_fht))))]
-
 
 # Create the initial bias column which will be used to calculate average biases
 edx[, rbias := rating - global_mean]
@@ -286,6 +282,12 @@ print("---------------------------------------------------------------")
 # params |> ggplot(aes(elen_pars, rmse, group = elen_pars)) +
 #   geom_boxplot() + geom_point()
 
+
+# Preprocess holdout dataset
+separate_genres(final_holdout_test)
+extract_ts(final_holdout_test)
+m_year_fht <- str_match(final_holdout_test$title, "\\s\\((\\d+)\\)$")[,2]
+final_holdout_test[, movie_year := factor(year(mdy(paste("1-1-", m_year_fht))))]
 
 # Extract movie era from title using the best era_len value
 era_len <- 15
