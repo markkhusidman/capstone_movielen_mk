@@ -1,7 +1,7 @@
 ---
 title: "MovieLens Project"
 author: "Mark Khusidman"
-date: "2023-03-14"
+date: "2023-05-25"
 output:
   pdf_document: default
   html_document: default
@@ -80,7 +80,7 @@ rm(dl, ratings, movies, test_index, temp, movielens, removed)
 
 ## Introduction
 
-A recommendation system is a model which predicts user content ratings based on the content's relevant features and prior user choices. The goal of this project is to create and evaluate a movie recommendation system based on the "10M" version of the "MovieLens" dataset. This dataset contains six columns and 10,000,054 rows in total. Each row represents a single rating of a specific film made by a particular user. The six columns which constitute this dataset are described as follows: *userId* is an integer column which contains a unique identifier for the user making a rating; *movieId*, also an integer column, contains a unique identifier for the movie being rated; "rating" is a numeric column which contains the user's rating for the movie in question; *timestamp* is an integer column containing the number of seconds between the Unix epoch (00:00:00 January 1st, 1970) and the time when the rating was made; *title* is a character column which contains both the *title* and the release year of the movie being rated; *genres*, also a character column, contains a pipe-separated list of all genres associated with the movie being rated. Prior to model training, the data is split into a training set (referred to as the *edx* set) containing 9,000,055 rows and a holdout set containing 999,999 rows. In order to create a movie recommendation system, movie ratings must be modeled based on relevant columns. In the case of this project, some columns used in the model preexist in the original *edx* set, while others are derived from preexisting columns. The model evaluated for this project is conceived of as the sum of average rating biases found along these columns. In other words, grouping is used to calculate an average bias for each unique value of each relevant column in the *edx* set. The predicted rating corresponding to any combination of these values can then be calculated by taking the sum of their associated biases. Certain hyperparameters, which will be described later, are used during model training. The specific values that these hyperparameters take in the final model are determined via Monte Carlo cross-validation. Before this training can take place, however, the data must be explored and cleaned.
+A recommendation system is a model which predicts user content ratings based on the content's relevant features and prior user choices. The goal of this project is to create and evaluate a movie recommendation system based on the "10M" version of the "MovieLens" dataset. This dataset contains six columns and 10,000,054 rows in total. Each row represents a single rating of a specific film made by a particular user. The six columns which constitute this dataset are described as follows: *userId* is an integer column which contains a unique identifier for the user making a rating; *movieId*, also an integer column, contains a unique identifier for the movie being rated; *rating* is a numeric column which contains the user's rating for the movie in question; *timestamp* is an integer column containing the number of seconds between the Unix epoch (00:00:00 January 1st, 1970) and the time when the rating was made; *title* is a character column which contains both the *title* and the release year of the movie being rated; *genres*, also a character column, contains a pipe-separated list of all genres associated with the movie being rated. Prior to model training, the data is split into a training set (referred to as the *edx* set) containing 9,000,055 rows and a holdout set containing 999,999 rows. In order to create a movie recommendation system, movie ratings must be modeled based on relevant columns. In the case of this project, some columns used in the model preexist in the original *edx* set, while others are derived from preexisting columns. The model evaluated for this project is conceived of as the sum of average rating biases found along these columns. In other words, grouping is used to calculate an average bias for each unique value of each relevant column in the *edx* set. The predicted rating corresponding to any combination of these values can then be calculated by taking the sum of their associated biases. Certain hyperparameters, which will be described later, are used during model training. The specific values that these hyperparameters take in the final model are determined via Monte Carlo cross-validation. Before this training can take place, however, the data must be explored and cleaned.
 
 ## Methods
 
@@ -91,7 +91,7 @@ Note that the data exploration, data cleaning, and new column creation described
 sprintf("Any missing values in edx?: %s", anyNA(edx))
 ```
 
-Because character columns are generally the most prone to error, these are the first columns checked for issues. Specifically, it is important to ensure that all string formats present in the *genres* and *title* columns are known and that none of the values contain formatting errors. This way, future attempts to parse the character data are much less likely to fail. Character matching via regular expressions is used on both the *genres* and *title* columns to check if the formats seen in the first rows are consistent throughout the data.
+Because character columns are generally the most prone to error, these are the first columns checked for issues. Specifically, it is important to ensure that all string formats present in the *genres* and *title* columns are known and that none of the values contain formatting errors. This way, future attempts to parse the character data are much less likely to fail. Character matching via regular expressions is used on both the *genres* and *title* columns to check whether the formats seen in the first rows are consistent throughout the data.
 
 ```{r}
 # Detect any items in the genres column which do not fit the apparent format
@@ -99,20 +99,20 @@ edx$genres[str_detect(edx$genres, "^[A-Z][a-z]+|
 +            ^[A-Z][a-z]+\\|[A-Z][a-z]+", negate = TRUE)]
 ```
 
-In the case of the *genres* column, there appear to be values present that do not match the initial format. It does not appear that these values will interfere with future parsing, however, and are left as they are.
+In the case of the *genres* column, there do appear to be values present that do not match the initial format. It does not appear that these values will interfere with future parsing, however, and are left as they are.
 
 ```{r}
 # Detect any items in the title column which do not fit the apparent format
 edx$title[str_detect(edx$title, "\\s\\(\\d+\\)$", negate = TRUE)]
 ```
 
-In the case of the *title* column, all values appear to be consistent with the initial format. Next, it is useful to ensure that there are no outliers present in the "rating" column, as these values would likely be erroneous. An easy way to check for outliers while also getting an idea of data's distribution is to plot a histogram of the data. A histogram of the "rating" column from the *edx* set is shown below.
+In the case of the *title* column, all values appear to be consistent with the initial format. Next, it is useful to ensure that there are no outliers present in the *rating* column, as these values would likely be erroneous. An easy way to check for outliers while also getting an idea of set's distribution is to use a histogram. Shown below is a histogram of the *edx* dataset's *rating* column.
 
 ```{r}
 hist(edx$rating, breaks = 20, xlim = c(0, max(edx$rating)))
 ```
 
-Upon viewing the above chart, a few facts become apparent: First, values in the column are bound between 0.5 and 5. Second, all values appear to be multiples of 0.5. Third, it does not appear as though any outliers are present. It is important to note that all further steps are taken after the "data.frame" objects representing the *edx* and holdout datasets are transformed into "data.table" objects. This is done because the data.table library was found to be much faster than the "tidyverse" library when working with this quantity of data.
+Upon viewing the above chart, a few facts become apparent: First, values in the column are bound between 0.5 and 5. Second, all values appear to be multiples of 0.5. Third, it does not appear as though any outliers are present. It is important to note that all further steps are taken after the "data.frame" objects representing the *edx* and holdout datasets are transformed into "data.table" objects. This is done because the data.table library was found to be much faster than the "tidyverse" library when large quantities of data are considered.
 
 ```{r}
 # Convert data to data.table objects
@@ -141,7 +141,7 @@ edx$movieId[which(edx$title == "War of the Worlds (2005)")] <- primary_id
 final_holdout_test$movieId[which(final_holdout_test$title == "War of the Worlds (2005)")] <- primary_id
 ```
 
-Before designing and testing a complex model, it is often desirable to first derive a baseline RMSE by testing a very simple model on the data. In this case, always predicting the mean of the *edx* dataset's "rating" column (*global_mean*) represents a suitable first model.
+Before designing and testing a complex model, it is often desirable to first derive a baseline RMSE by testing a very simple model on the data. In this case, always predicting the mean of the *edx* dataset's *rating* column (*global_mean*) represents a suitable first model.
 
 ```{r}
 # Evaluate simple model for baseline RMSE
@@ -158,7 +158,7 @@ genre_count_edx <- str_count(edx$genres, "\\|") + 1
 hist(genre_count_edx, breaks = 8, xlab = "Number of Genres")
 ```
 
-In fact, genres 6, 7, and 8 are present in only 0.868% of rows in the *edx* set. As such, only columns corresponding to the first 5 listed genres are created. The total number of non-null genres in each row is also added as a column, and it should be noted that this value is based on the aforementioned 5 individual genre columns. This was found to yield a slightly better result than taking into account all 8 genres potentially found in the *genres* column.
+In fact, genres 6, 7, and 8 are present in only 0.868% of rows in the *edx* set. As such, only columns corresponding to the first 5 listed genres are created. The total number of non-null genres in each row is also added as a column, and it should be noted that this value only takes into account the aforementioned 5 individual genre columns. This was found to yield a slightly better result than taking into account all 8 genres potentially found in a *genres* column value.
 
 ```{r}
 # Separate genres and calculate number of genres given. Convert genres to factors
@@ -178,7 +178,7 @@ separate_genres <- function(dt){
 separate_genres(edx)
 ```
 
-Next, the *timestamp* column was used to extract the year, month, day, and hour of each row's *timestamp*. The "data.table" implementation of various "lubridate" functions are used for this purpose.
+Next, the *timestamp* column was used to extract the year, month, day, and hour of each row's *timestamp*. The data.table implementations of various "lubridate" functions are used for this purpose.
 
 ```{r}
 # Extract timestamp-related data
@@ -193,7 +193,7 @@ extract_ts <- function(dt){
 extract_ts(edx)
 ```
 
-The movie year is also extracted, this time from the *title* column using string matching and a regular expression group.
+The movie year is also extracted, this time by using a regular expression group with values in the *title* column. Note that the "mdy" function in the code below comes directly from the lubridate package.
 
 ```{r}
 # Extract movie year from title
@@ -202,7 +202,7 @@ m_year_edx <- str_match(edx$title, "\\s\\((\\d+)\\)$")[,2]
 edx[, movie_year := factor(year(mdy(paste("1-1-", m_year_edx))))]
 ```
 
-Next, an *rbias* column is created in the *edx* set by subtracting the previously referenced *global_mean* from all values in the "rating" column. This column effectively represents the movie ratings as biases centered around *global_mean*. These bias values will be used to calculate the average biases associated with input values. It is important to note that because the *rbias* column is not an input in of itself, this step is only performed on the *edx* set.
+Next, an *rbias* column is created in the *edx* set by subtracting the previously referenced *global_mean* from all values in the *rating* column. This colum represents the movie ratings as biases centered around *global_mean*. These bias values will be used during model training to calculate the average biases associated with input values. It is important to note that because the *rbias* column merely facilitates average bias calculation, rather than serving as a model input itself, it is not added to the holdout set.
 
 ```{r}
 # Create the initial bias column which will be used to calculate average biases
@@ -469,7 +469,7 @@ final_holdout_test |> ggplot(aes(rev_year, error, group = rev_year)) +
 geom_boxplot()
 ```
 
-As with the other charts, the median errors are fairly consistent apart from an initial single-observation value. The general correlation between total error range and number of observations is also evident to a small extent. One interesting effect seen in this graph is that box and whisker sizes appear to decrease over the X axis. This effect appears to be correlated with the variance of ratings made in particular years. In other words, an input value associated with lower rating variance seems to also be associated with lower error variance.
+As with the other charts, the median errors are fairly consistent apart from an initial single-observation value. The general correlation between total error range and number of observations is also evident to a small extent. One interesting effect seen in this graph is that box and whisker sizes appear to decrease over the X axis. This effect appears to be correlated with the variance of ratings made in particular years. In other words, a review year input value associated with a smaller variety of ratings seems to yield more consistent errors.
 
 ## Conclusion
 
