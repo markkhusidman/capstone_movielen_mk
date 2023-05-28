@@ -185,7 +185,7 @@ edx[, rbias := rating - global_mean]
 elen_pars <- c(15)  # Controls era length
 lambda_pars <- c(6) # Controls extent of regularization
 
-# Array to hold hyperparameter values and results
+# Array to hold hyperparameter combinations and results
 params <- expand.grid(elen_pars, lambda_pars)
 names(params) <- c("elen_pars", "lambda_pars")
 params$rmse <- NaN
@@ -273,11 +273,12 @@ print("---------------------------------------------------------------")
 # fwrite(params, "temp_model-tuning2.csv")
 
 
-# Visualize relationship between hyperparameter values and validation RMSE.
-# Will only work if model-tuning loop is run for multiple values.
+# Uncomment below code to visualize relationship between hyperparameter values 
+# and average RMSE. Will only work if model-tuning loop is run for multiple 
+# hyperparameter combinations.
 
-# (params |> ggplot(aes(lambda_pars, rmse, group = lambda_pars)) +
-#   geom_boxplot() + geom_point())
+# params |> ggplot(aes(lambda_pars, rmse, group = lambda_pars)) +
+#   geom_boxplot() + geom_point()
 
 # params |> ggplot(aes(elen_pars, rmse, group = elen_pars)) +
 #   geom_boxplot() + geom_point()

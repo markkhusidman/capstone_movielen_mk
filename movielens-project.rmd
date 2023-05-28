@@ -197,7 +197,6 @@ The movie year is also extracted, this time by using a regular expression group 
 
 ```{r}
 # Extract movie year from title
-
 m_year_edx <- str_match(edx$title, "\\s\\((\\d+)\\)$")[,2]
 edx[, movie_year := factor(year(mdy(paste("1-1-", m_year_edx))))]
 ```
@@ -292,7 +291,7 @@ for(row in 1:nrow(params)){
 }
 ```
 
-Every iteration of the loop requires setting the values of two hyperparameters: *era_len* and *lambda*. The first of these determines the manner in which the era length column is calculated. This column is calculated by grouping values of the movie year column into eras of a predetermined length, and is calculated for the *edx* set during each full iteration of the model-tuning loop. The second hyperparameter is used to regularize the model by reducing the effect of average biases calculated with few observations. A larger value assigned to *lambda* will cause a larger penalty to be applied to low-observation biases.
+Every iteration of the loop requires setting the values of two hyperparameters: *era_len* and *lambda*. The first of these determines the manner in which the *movie_era* column is calculated. This column is created by grouping values from the movie year column into eras of a length equal to *era_len*, and is calculated for the *edx* set during each full iteration of the model-tuning loop. The second hyperparameter is used to regularize the model by reducing the effect of average biases that were calculated with few observations. A larger value assigned to *lambda* will cause a larger penalty to be applied to low-observation average biases.
 
 ```{r, eval=FALSE}
 # Hyperparameters
@@ -303,7 +302,7 @@ lambda_pars <- 2:8 # Controls extent of regularization
 The array of hyperparameter combinations used for model tuning is created by calling "expand.grid" on a pair of vectors containing all the hyperparameter values to be tested.
 
 ```{r, eval=FALSE}
-# Array to hold hyperparameter values and results
+# Array to hold hyperparameter combinations and results
 params <- expand.grid(elen_pars, lambda_pars)
 names(params) <- c("elen_pars", "lambda_pars")
 params$rmse <- NaN
@@ -313,12 +312,12 @@ params$sd <- NaN
 Once the array of combinations is created, the model-tuning loop begins. First, *era_len* is used to create the movie era column.
 
 ```{r, eval=FALSE}
-# Extract movie era from movie year
+# Extract movie era from movie year. Performed once per hyperparameter combination.
 era_len <- params$elen_pars[row]
 edx[, movie_era := factor(floor(as.integer(m_year_edx) / era_len) * era_len)]
 ```
 
-Next, the *edx* dataset is divided into a new training set and a validation set. The training set will be used to train a model with the chosen hyperparameters, while the validation set will be used to evaluate the resulting model. This iterative training and evaluation is performed 3 times for each combination of hyperparameters. Each of these sub-iterations utilizes different subsets of the *edx* set for training and validation, thereby implementing a form of cross-validation. It should be noted that this is not true K-fold cross-validation because the data is split randomly; Rather, this process is best described as Monte Carlo cross-validation.
+Next, the *edx* dataset is divided into a new training set and a validation set. The training set will be used to train a model with the chosen hyperparameters, while the validation set will be used to evaluate the resulting model. This iterative training and evaluation is performed 3 times for each combination of hyperparameters. Each of these sub-iterations utilizes different subsets of the *edx* set for training and validation, thereby implementing a form of cross-validation. It should be noted that this is not K-fold cross-validation because the data is split randomly. Rather, this process is best described as Monte Carlo cross-validation.
 
 ```{r, eval=FALSE}
 # Split edx dataset into train and validate sets. Performed 3 times for each
@@ -336,10 +335,10 @@ removed <- anti_join(temp, validate, by = c(userId, movieId))
 train <- rbind(train, removed)
 ```
 
-As mentioned previously, the model in question can be viewed as the sum of the average rating biases associated with each input value. The calculation of these biases involves a third loop, this time over all of the *edx* columns which will be used as inputs in the final model. This final loop is referred to as the model-training loop. During each iteration, the *edx* data is grouped by the column in question. The groups are then aggregated using a regularized mean where the extent of regularization is controlled by the *lambda* hyperparameter. The calculated average biases are then subtracted from the *rbias* column, thereby removing their influence on any subsequent iterations of the model-training loop. Finally, the average biases are joined to their associated input values in the validation set.
+As mentioned previously, the model in question can be viewed as the sum of the average rating biases associated with a set of input values. The calculation of these biases involves a third loop, this time over all of the *edx* columns which will be used as inputs in the final model. This innermost loop is referred to as the model-training loop. During each iteration, the *edx* data is grouped by the column in question. The groups are then aggregated using a regularized mean where the extent of regularization is controlled by the *lambda* hyperparameter. The calculated average biases are then subtracted from the *rbias* column, thereby removing their influence on any subsequent iterations of the model-training loop. Finally, the average biases are joined to their associated input values in the validation set.
 
 ```{r, eval=FALSE}
-# Model-training loop
+# Model-training loop. Run 3 times for each hyperparameter combination.
     
 for(col in c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5", "n_genres",
               "movie_era", "movie_year", "rev_hour", "rev_day", "rev_month",
@@ -358,7 +357,7 @@ for(col in c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5", "n_genres",
 }
 ```
 
-Once this is done for all input columns, the average biases in each row are all summed along with global_mean to yield predictions. Predictions are made for both the validation set and the training set. This allows training RMSEs, which are used to make sure that the validation RMSEs are reasonable, to be calculated. Because it is known that ratings in these data do not take values lower than 0.5 or higher than 5, predictions are clipped such that they are between those values prior to the calculation of RMSEs.
+Once this is done for all input columns, the average biases in each row are all summed along with *global_mean* to yield predictions. Predictions are made for both the validation set and the training set. This allows training RMSEs, which are used to make sure that the validation RMSEs are reasonable, to be calculated. Because it is known that ratings in these data do not take values lower than 0.5 or higher than 5, predictions are clipped such that they are between those values prior to the calculation of RMSEs.
 
 ```{r, eval=FALSE}
 # Calculate predictions by summing all bias columns with global_mean
@@ -387,9 +386,17 @@ params$rmse[row] <- mean(rmses)
 params$sd[row] <- sd(rmses)
 ```
 
-The relationship between average RMSEs and hyperparameters can be effectively visualized with a box plot for each hyperparameter. However, due to the time it would take to run through all combinations of hyperparameters, the code necessary to create these box plots is not evaluated in this report.  Although it is tempting to determine the best combination by simply picking the pair of hyperparameters associated with the lowest average RMSE, the aforementioned box plots reveal that many of the smallest and largest average RMSEs are outliers. As such, the box plots are used to visualize the medians of the average RMSEs associated with each hyperparameter value; Each hyperparameter is then picked individually by selecting the value associated with the lowest median.
+The relationship between average RMSEs and hyperparameter values can be effectively visualized with a set of box plots for both *era_len* and *lambda*. However, due to the time it would take to run the model-tuning loop with all combinations of hyperparameters, the code necessary to create these box plots is not evaluated in this report. Although it is tempting to determine the best combination by simply picking the pair of hyperparameters associated with the lowest average RMSE, the aforementioned box plots reveal that many of the smallest average RMSEs are outliers. As a result, these box plots are used to visualize the medians of the average RMSEs associated with each tested hyperparameter value. For both *era_len* and *lambda*, the value associated with the lowest such median is chosen for use in the final model.
 
-Some columns and hyperparameters explored during the design of this model were found to be counterproductive and discarded. The first of these were a pair of columns which contained the number of observations associated with each *userId* and *movieId* value, respectively. These columns used their own *lambda* hyperparameter for average bias calculation; The use of this hyperparameter was discontinued along with the columns. A column which grouped users in a similar manner to how the movie era column grouped movie years was also explored. Like the movie era column, this too had its own hyperparameter to determine group size. Both this column and its associated hyperparameter were discarded in the final model.
+```{r, eval=FALSE}
+# Visualize relationship between hyperparameter values and average RMSE.
+
+params |> ggplot(aes(lambda_pars, rmse, group = lambda_pars)) + geom_boxplot() + geom_point()
+
+params |> ggplot(aes(elen_pars, rmse, group = elen_pars)) + geom_boxplot() + geom_point()
+```
+
+Some columns and hyperparameters explored during the design of this model were found to be counterproductive and discarded. The first of these were a pair of columns which contained the number of observations associated with each *userId* and *movieId* value, respectively. These columns used a separate regularization hyperparameter for average bias calculation; Its use was discontinued along with the columns. A column which grouped users by their *userId* value was also explored. Like the *movie_era* column, its calculation involved the use of its own hyperparameter to determine group size. Both this column and the associated hyperparameter were discarded in the final model design.
 
 ## Results
 
