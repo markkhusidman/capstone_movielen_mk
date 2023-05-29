@@ -4,7 +4,6 @@ author: "Mark Khusidman"
 date: "2023-05-25"
 output:
   pdf_document: default
-  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -95,8 +94,8 @@ Because character columns are generally the most prone to error, these are the f
 
 ```{r}
 # Detect any items in the genres column which do not fit the apparent format
-edx$genres[str_detect(edx$genres, "^[A-Z][a-z]+|
-+            ^[A-Z][a-z]+\\|[A-Z][a-z]+", negate = TRUE)]
+edx$genres[str_detect(edx$genres, 
+                      "^[A-Z][a-z]+|^[A-Z][a-z]+\\|[A-Z][a-z]+", negate = TRUE)]
 ```
 
 In the case of the *genres* column, there do appear to be values present that do not match the initial format. It does not appear that these values will interfere with future parsing, however, and are left as they are.
@@ -138,7 +137,8 @@ primary_id <- edx[title == "War of the Worlds (2005)",
 
 edx$movieId[which(edx$title == "War of the Worlds (2005)")] <- primary_id
 
-final_holdout_test$movieId[which(final_holdout_test$title == "War of the Worlds (2005)")] <- primary_id
+final_holdout_test$movieId[
+  which(final_holdout_test$title == "War of the Worlds (2005)")] <- primary_id
 ```
 
 Before designing and testing a complex model, it is often desirable to first derive a baseline RMSE by testing a very simple model on the data. In this case, always predicting the mean of the *edx* dataset's *rating* column (*global_mean*) represents a suitable first model.
@@ -158,7 +158,7 @@ genre_count_edx <- str_count(edx$genres, "\\|") + 1
 hist(genre_count_edx, breaks = 8, xlab = "Number of Genres")
 ```
 
-In fact, genres 6, 7, and 8 are present in only 0.868% of rows in the *edx* set. As such, only columns corresponding to the first 5 listed genres are created. The total number of non-null genres in each row is also added as a column named *n_genres*, and it should be noted that this value only takes into account the aforementioned 5 individual genre columns. This was found to yield a slightly better result than taking into account all 8 genres potentially found in a *genres* column value.
+In fact, genres 6, 7, and 8 are present in only 0.868% of rows in the *edx* set. As such, only columns corresponding to the first 5 listed genres are created. The total number of non-null genres in each row is also added as a column named *n_genres*, and it should be noted that this value only takes into account the aforementioned 5 individual genre columns. This was found to yield a slightly better result than taking into account all 8 genres potentially found in a *genres* column value. Note that the *genres* column itself was not found to improve RMSE when used in conjunction with its derived columns, and is therefore not used as an input during model training.
 
 ```{r}
 # Separate genres and calculate number of genres given. Convert genres to factors
@@ -178,7 +178,7 @@ separate_genres <- function(dt){
 separate_genres(edx)
 ```
 
-Next, the *timestamp* column was used to extract the year, month, day, and hour that each review was made. These columns are named *rev_year*, *rev_month*, *rev_day*, and *rev_hour*, respectively. The data.table implementations of various "lubridate" functions are used for this purpose.
+Next, the *timestamp* column was used to extract the year, month, day, and hour that each review was made. These columns are named *rev_year*, *rev_month*, *rev_day*, and *rev_hour*, respectively. The data.table implementations of various "lubridate" functions are used for this purpose. Note that the *timestamp* column itself is not used as a model input because it contains too many unique values; most average biases associated with its values would be based on a single observation.
 
 ```{r}
 # Extract timestamp-related data
@@ -193,7 +193,7 @@ extract_ts <- function(dt){
 extract_ts(edx)
 ```
 
-The movie year is also extracted, this time by using a regular expression group with values in the *title* column. Note that the "mdy" function in the code below comes directly from the lubridate package.
+A regular expression group is now used to extract movie release years from the *title* column. The resulting column is named *movie_year*. Note that the "mdy" function in the code below comes directly from the lubridate package. Note that the *title* column itself is not used as an input to the model because it is redundant with the *movieId* column.
 
 ```{r}
 # Extract movie year from title
@@ -201,14 +201,14 @@ m_year_edx <- str_match(edx$title, "\\s\\((\\d+)\\)$")[,2]
 edx[, movie_year := factor(year(mdy(paste("1-1-", m_year_edx))))]
 ```
 
-Next, an *rbias* column is created in the *edx* set by subtracting the previously referenced *global_mean* from all values in the *rating* column. This colum represents the movie ratings as biases centered around *global_mean*. These bias values will be used during model training to calculate the average biases associated with input values. It is important to note that because the *rbias* column merely facilitates average bias calculation, rather than serving as a model input itself, it is not added to the holdout set.
+Next, an *rbias* column is created in the *edx* set by subtracting the previously referenced *global_mean* from all values in the *rating* column. This column represents the movie ratings as biases centered around *global_mean*. These bias values will be used during model training to calculate the average biases associated with input values. It is important to note that because the *rbias* column merely facilitates average bias calculation, rather than serving as a model input itself, it is not added to the holdout set.
 
 ```{r}
 # Create the initial bias column which will be used to calculate average biases
 edx[, rbias := rating - global_mean]
 ```
 
-After the aforementioned columns are created, the model-tuning loop is run. Below is the full code for the model-tuning loop. It is not evaluated due to time constraints, but will be explained in detail further below.
+After the aforementioned columns are created, the model-tuning loop is run. Below is the full code for the model-tuning loop. It is not evaluated due to computational constraints, but will be explained in detail further below.
 
 ```{r, eval=FALSE}
 # Hyperparameters
@@ -357,7 +357,7 @@ for(col in c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5", "n_genres",
 }
 ```
 
-Once this is done for all input columns, the average biases in each row are all summed along with *global_mean* to yield predictions. Predictions are made for both the validation set and the training set. This allows training RMSEs, which are used to make sure that the validation RMSEs are reasonable, to be calculated. Because it is known that ratings in these data do not take values lower than 0.5 or higher than 5, predictions are clipped such that they are between those values prior to the calculation of RMSEs.
+Keep in mind that the *genres*, *timestamp*, and *title* columns originally present in the *edx* set are not used as inputs during model training. Once this is done for all input columns, the average biases in each row are all summed along with *global_mean* to yield predictions. Predictions are made for both the validation set and the training set. This allows training RMSEs, which are used to make sure that the validation RMSEs are reasonable, to be calculated. Because it is known that ratings in these data do not take values lower than 0.5 or higher than 5, predictions are clipped such that they are between those values prior to the calculation of RMSEs.
 
 ```{r, eval=FALSE}
 # Calculate predictions by summing all bias columns with global_mean
@@ -386,14 +386,16 @@ params$rmse[row] <- mean(rmses)
 params$sd[row] <- sd(rmses)
 ```
 
-The relationship between hyperparameter value and resulting average RMSE (aRMSE) can be effectively visualized with a set of box plots for both *era_len* and *lambda*. However, due to the time it would take to run the model-tuning loop with all combinations of hyperparameters, the code necessary to create these box plots is not evaluated in this report. Although it is tempting to determine the best combination by simply picking the pair of hyperparameters associated with the lowest aRMSE, the aforementioned box plots reveal that many of the smallest aRMSEs are outliers. As a result, these box plots are used to visualize the median aRMSE associated with each tested hyperparameter value. For both *era_len* and *lambda*, the value associated with the lowest such median is chosen for use in the final model. In this case, the best value for *era_len* is found to be 15 and the best value for *lambda* is found to be 6
+The relationship between hyperparameter value and resulting average RMSE (aRMSE) can be effectively visualized with a set of box plots for both *era_len* and *lambda*. However, due to the time it would take to run the model-tuning loop with all combinations of hyperparameters, the code necessary to create these box plots is not evaluated in this report. Although it is tempting to determine the best combination by simply picking the pair of hyperparameters associated with the lowest aRMSE, the aforementioned box plots reveal that many of the smallest aRMSEs are outliers. As a result, these box plots are used to visualize the median aRMSE associated with each tested hyperparameter value. For both *era_len* and *lambda*, the value associated with the lowest such median is chosen for use in the final model. In this case, the best value for *era_len* is found to be 15 and the best value for *lambda* is found to be 6.
 
 ```{r, eval=FALSE}
 # Visualize relationship between hyperparameter values and average RMSE.
 
-params |> ggplot(aes(lambda_pars, rmse, group = lambda_pars)) + geom_boxplot() + geom_point()
+params |> ggplot(aes(lambda_pars, rmse, group = lambda_pars)) + geom_boxplot() +
+  geom_point()
 
-params |> ggplot(aes(elen_pars, rmse, group = elen_pars)) + geom_boxplot() + geom_point()
+params |> ggplot(aes(elen_pars, rmse, group = elen_pars)) + geom_boxplot() +
+  geom_point()
 ```
 
 Some columns and hyperparameters explored during the design of this model were found to be counterproductive and discarded. The first of these were a pair of columns which contained the number of observations associated with each *userId* and *movieId* value, respectively. These columns used a separate regularization hyperparameter for average bias calculation; Its use was discontinued along with the columns. A column which grouped users by their *userId* value was also explored. Like the *movie_era* column, its calculation involved the use of its own hyperparameter to determine group size. Both this column and the associated hyperparameter were discarded in the final model design.
@@ -453,14 +455,14 @@ final_rmse <- sqrt(mean((final_holdout_test$error)^2))
 sprintf("Final RMSE: %f", final_rmse)
 ```
 
-As can be seen above, a final RMSE value of slightly over 0.8642 is yielded when applying the resulting model to the holdout set. This represents a nearly 18.5% decrease from the baseline RMSE of approximately 1.06 calculated earlier. One way to delve more deeply into the final model's performance is to plot the prediction errors against input columns. This will show the extent to which model performance varies by input. Ideally, model performance would be consistent across inputs. If the model suffers a significant increase in error when confronted with a certain input, this may be a good area of inquiry if one seeks to improve the model's overall performance. In this case, box plots are made comparing the prediction error to the values of 3 input columns: *movie_era*, *n_genres*, and *rev_year*. The following chart relates errors to their associated values in *movie_era,* a column created by grouping movie years into eras.
+As can be seen above, a final RMSE value of slightly over 0.8642 is yielded when applying the resulting model to the holdout set. This represents a nearly 18.5% decrease from the baseline RMSE of approximately 1.06 calculated earlier. One way to delve more deeply into the final model's performance is to plot the prediction errors against input columns. This will show the extent to which model performance varies by input. Ideally, model performance would be consistent across inputs. If the model suffers a significant increase in error when confronted with a certain input, this may be a good area of inquiry if one seeks to improve the model's overall performance. In this case, box plots are made comparing the values of certain columns to their respective error distributions. Three input columns are used for this purpose: *movie_era*, *n_genres*, and *rev_year*. The following chart relates errors to their associated values in *movie_era,* a column created by grouping movie years into eras.
 
 ```{r}
 # Visualize relationship between movie era and model errors
 final_holdout_test |> ggplot(aes(movie_era, error, group = movie_era)) + geom_boxplot()
 ```
 
-As demonstrated above, the median errors, box positions, and whisker positions stay fairly consistent across movie eras, with the notable exception of the first box. This first box is likely skewed because few observations are found corresponding to the era of 1905 through 1919. The total range of values in each plot (including outliers) appears to increase somewhat as the eras become more recent, likely due the increased number of observations associated with those eras. The next chart compares errors to their associated values in *n_genres*, a column corresponding the number of non-null genres in each row.
+The first quartile, median, thrid quartile, and range (excluding outliers) of each box plot stay fairly consistent across movie eras, with the notable exception of the first box. This first box is likely skewed because few observations are found corresponding to the era of 1905 through 1919. The total range of values in each plot (including outliers) appears to increase somewhat as the eras become more recent, likely due the increased number of observations associated with those eras. The next chart compares errors to their associated values in *n_genres*, a column corresponding the number of non-null genres in each row.
 
 ```{r}
 # Visualize relationship between first genre and model errors
@@ -476,8 +478,10 @@ final_holdout_test |> ggplot(aes(rev_year, error, group = rev_year)) +
 geom_boxplot()
 ```
 
-As with the other charts, the median errors are fairly consistent apart from an initial single-observation value. The general correlation between total error range and number of observations is also evident to a small extent. One interesting effect seen in this graph is that box and whisker sizes (not including outliers) appear to shift over the X axis. This effect seems to be related to similar movements in the variance of ratings over time. In other words, a *rev_year* value associated with more consistent ratings seems to yield more consistent errors.
+As with the other charts, the median errors are fairly consistent apart from an initial single-observation value. The general correlation between total error range and number of observations is also evident to a small extent. One interesting effect seen in this graph is that box and whisker sizes (not including outliers) appear to shift over the X axis. This effect seems to be related to similar movements in rating variance over time. In other words, a *rev_year* value associated with more consistent ratings seems to yield more consistent errors.
 
 ## Conclusion
 
-Many steps were taken over the course of this project in service of its goal to design and implement a movie recommendation system. First, a simple model was defined to yield a baseline RMSE. The data were then explored in preparation for cleaning and the creation of new columns. The only data cleaning found to be necessary was the removal of a second movie ID associated with a particular film.  An assortment of new columns were created based on the existing data: 5 individual genre columns and a column containing the quantity of non-null genres were all derived from the existing *genres* column; movie year and movie era were both derived from the existing *title* column; and columns containing the hour, day, month, and year that each rating was created had been derived from the existing *timestamp* column. These new columns were used along with the existing *userId* and *movieId* columns to train a model whose function was based on the average rating biases associated with model inputs. The values of two hyperparameters, *era_len* and *lambda*, were determined via a model-tuning loop before the final model was trained. These hyperparameters affected how the movie era column was calculated and the extent to which average biases were regularized, respectively. Once the best hyperparameter values were found and used to train the final model, this model was evaluated on the holdout dataset. This evaluation yielded an RMSE of 0.8642, representing a significant improvement over the baseline RMSE calculated earlier. One limitation of this project was the failure to test every possible combination of the input columns available; some of the original columns and two derived columns (which had not yet been mentioned in this section) were not used in the final model. It is therefore possible that a different combination of the available columns would yield a better RMSE when evaluated on the holdout set. This failure was due to time constraints. Another limitation of this work, also resulting from time constraints, was the relatively low number of iterations devoted to each hyperparameter combination in the model-tuning loop. The use of 10 iterations rather than 3 would simplify hyperparameter selection by making the choice more obvious. Both of these limitations represent opportunities for improvement in future related work. 
+Many steps were taken over the course of this project to design and implement a movie recommendation system. First, a simple model was defined to yield a baseline RMSE. The data were then explored in preparation for cleaning and the creation of new columns. The only data cleaning found to be necessary was the removal of a second movie ID associated with a particular film. An assortment of new columns were created based on the existing data: 5 individual genre columns and a column containing the quantity of non-null genres were all derived from the existing *genres* column; movie year and movie era were both derived from the existing *title* column; and columns containing the hour, day, month, and year that each rating was created had been derived from the existing *timestamp* column. These new columns were used along with the existing *userId* and *movieId* columns to train a model whose function was based on the average rating biases associated with model inputs. The values of two hyperparameters, *era_len* and *lambda*, were determined via a model-tuning loop before the final model was trained. These hyperparameters affected the manner in which the movie era column was calculated and the extent to which average biases were regularized, respectively. Once the best hyperparameter values were found and used to train the final model, this model was evaluated on the holdout dataset. This evaluation yielded an RMSE of 0.8642, representing a significant improvement over the baseline RMSE calculated earlier.
+
+A comparison of the values in 3 input columns to their respective error distributions revealed that errors stay fairly consistent across input values. Exceptions to this typically come in the form of values with few associated observations. Apart from these exceptions, the median errors associated with input values all appear to be close to zero, suggesting that the final model has low bias. One limitation of this project, resulting from computational constraints, was the relatively low number of iterations devoted to each hyperparameter combination in the model-tuning loop. The use of 10 iterations rather than 3 would simplify hyperparameter selection by making the choice more obvious. Another limitation of this work was the use of a single regularization hyperparameter (*lambda*). The use of a unique regularization hyperparameter for each input column would likely result in more optimized regularization during model training. This would be very computationally expensive, however. A second alternative would be to group columns together and assign a regularization hyperparameter to each group. A third limitation of this project, also due to computational constraints, was that many reasonable hyperparameter values could not be tested during model tuning. Increasing the number of values tested, both by increasing their range and decreasing the interval between them, may cause a more optimal set of final hyperparameter values to be chosen. All of these limitations represent opportunities for improvement in future related work. 
