@@ -476,7 +476,7 @@ final_holdout_test |> ggplot(aes(rev_year, error, group = rev_year)) +
 geom_boxplot()
 ```
 
-As with the other charts, the median errors are fairly consistent apart from an initial single-observation value. The general correlation between total error range and number of observations is also evident to a small extent. One interesting effect seen in this graph is that box and whisker sizes (not including outliers) appear to shift over the X axis. This effect seems to be related to similar movements in the variance of ratings made over time. In other words, a *rev_year* value associated with more consistent ratings seems to yield more consistent errors.
+As with the other charts, the median errors are fairly consistent apart from an initial single-observation value. The general correlation between total error range and number of observations is also evident to a small extent. One interesting effect seen in this graph is that box and whisker sizes (not including outliers) appear to shift over the X axis. This effect seems to be related to similar movements in the variance of ratings over time. In other words, a *rev_year* value associated with more consistent ratings seems to yield more consistent errors.
 
 ## Conclusion
 
