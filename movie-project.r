@@ -78,13 +78,15 @@ print("---------------------------------------------------------------")
 # Detect any items in the genres column which do not fit the apparent format
 
 print("Genres in edx which do not fit format:")
-print(edx$genres[str_detect(edx$genres, "^[A-Z][a-z]+|
-+            ^[A-Z][a-z]+\\|[A-Z][a-z]+", negate = TRUE)])
+print(edx$genres[str_detect(
+  edx$genres, "^[A-Z][a-z]+|^[A-Z][a-z]+\\|[A-Z][a-z]+", negate = TRUE)])
 print("------------")
 
 print("Genres in holdout which do not fit format:")
-print(final_holdout_test$genres[str_detect(final_holdout_test$genres, "^[A-Z][a-z]+|
-+            ^[A-Z][a-z]+\\|[A-Z][a-z]+", negate = TRUE)])
+print(final_holdout_test$genres[str_detect(
+  final_holdout_test$genres, "^[A-Z][a-z]+|^[A-Z][a-z]+\\|[A-Z][a-z]+", 
+  negate = TRUE)])
+
 print("---------------------------------------------------------------")
 
 # Detect any items in the title column which do not fit the apparent format
@@ -92,12 +94,18 @@ print("---------------------------------------------------------------")
 print("Titles in edx which do not fit format:")
 print(edx$title[str_detect(edx$title, "\\s\\(\\d+\\)$", negate = TRUE)])
 print("------------")
-print("Titles in holdout which do not fit format:")
-print(final_holdout_test$title[str_detect(final_holdout_test$title, "\\s\\(\\d+\\)$", negate = TRUE)])
 
-# Visualize rating distribution in datasets
-hist(edx$rating, breaks = 20, xlim = c(0, max(edx$rating)), xlab = "Rating")
-hist(final_holdout_test$rating, breaks = 20, xlim = c(0, max(edx$rating)),  xlab = "Rating")
+print("Titles in holdout which do not fit format:")
+print(final_holdout_test$title[str_detect(
+  final_holdout_test$title, "\\s\\(\\d+\\)$", negate = TRUE)])
+
+# Visualize rating distributions in edx and holdout
+
+hist(edx$rating, breaks = 20, xlim = c(0, max(edx$rating)), xlab = "Rating", 
+     main = "Histogram of Ratings in edx")
+
+hist(final_holdout_test$rating, breaks = 20, xlim = c(0, max(edx$rating)),  
+     xlab = "Rating", main = "Histogram of Ratings in holdout")
 
 # Convert data to data.table objects
 setDT(edx)
@@ -117,7 +125,9 @@ primary_id <- edx[title == "War of the Worlds (2005)",
                   length(title), keyby=movieId][1, movieId]
 
 edx$movieId[which(edx$title == "War of the Worlds (2005)")] <- primary_id
-final_holdout_test$movieId[which(final_holdout_test$title == "War of the Worlds (2005)")] <- primary_id
+
+final_holdout_test$movieId[
+  which(final_holdout_test$title == "War of the Worlds (2005)")] <- primary_id
 
 # Convert movieId column to factor. All future input columns must be factors or 
 # characters due to data.table joining behavior
@@ -133,10 +143,14 @@ baseline_rmse <- sqrt(mean((global_mean - edx$rating)^2))
 print(sprintf("Baseline RMSE: %f", baseline_rmse))
 
 # Visualize proportion of rows containing 6, 7, or 8 listed genres 
+
 genre_count_edx <- str_count(edx$genres, "\\|") + 1
-hist(genre_count_edx, breaks = 8, xlab = "Number of Genres")
+hist(genre_count_edx, breaks = 8, xlab = "Number of Genres", 
+     main = "Histogram of Genre Count in edx")
+
 genre_count_holdout <- str_count(final_holdout_test$genres, "\\|") + 1
-hist(genre_count_holdout, breaks = 8, xlab = "Number of Genres")
+hist(genre_count_holdout, breaks = 8, xlab = "Number of Genres", 
+     main = "Histogram of Genre Count in holdout")
 
 # Separate genres and calculate number of genres given. Convert genres to 
 # factors
@@ -198,7 +212,8 @@ print("Starting model-tuning loop")
 
 for(row in 1:nrow(params)){
   print("------------")
-  print(sprintf("Testing era_len of %g and lambda of %g:", params[row, 1], params[row, 2]))
+  print(sprintf("Testing era_len of %g and lambda of %g:", 
+                params[row, 1], params[row, 2]))
   print("------------")
   rmses <- c()
 
@@ -215,7 +230,8 @@ for(row in 1:nrow(params)){
     
     # Split edx dataset into train and validate sets
     
-    validate_index <- createDataPartition(y = edx$rating, times = 1, p = 0.1, list = FALSE)
+    validate_index <- createDataPartition(y = edx$rating, times = 1, p = 0.1, 
+                                          list = FALSE)
     train <- edx[-validate_index,]
     temp <- edx[validate_index,]
 
@@ -227,9 +243,9 @@ for(row in 1:nrow(params)){
     
     # Model-training loop
     
-    for(col in c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5", "n_genres",
-                 "movie_era", "movie_year", "rev_hour", "rev_day", "rev_month",
-                 "rev_year", "movieId", "userId")){
+    for(col in c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5", 
+                 "n_genres", "movie_era", "movie_year", "rev_hour", "rev_day", 
+                 "rev_month", "rev_year", "movieId", "userId")){
       
       # Calculate regularized average biases based on training set
       train[, paste0(col, "_bias") := sum(rbias) / (length(rbias) + lambda),
@@ -258,7 +274,8 @@ for(row in 1:nrow(params)){
     # Calculate and report training and validation RMSEs
     train_rmse <- sqrt(mean((train$pred - train$rating)^2))
     rmses[i] <- sqrt(mean((validate$pred - validate$rating)^2))
-    print(sprintf("Training RMSE: %f  Validation RMSE: %f", train_rmse, rmses[i]))
+    print(sprintf("Training RMSE: %f  Validation RMSE: %f", 
+                  train_rmse, rmses[i]))
   }
   
   # Record mean and sd of RMSEs for each hyperparameter combination
@@ -293,7 +310,8 @@ final_holdout_test[, movie_year := factor(year(mdy(paste("1-1-", m_year_fht))))]
 # Extract movie era from title using the best era_len value
 era_len <- 15
 edx[, movie_era := factor(floor(as.integer(m_year_edx) / era_len) * era_len)]
-final_holdout_test[, movie_era := factor(floor(as.integer(m_year_fht) / era_len) * era_len)]
+final_holdout_test[, movie_era := 
+                     factor(floor(as.integer(m_year_fht) / era_len) * era_len)]
 
 # Make sure all variables to be used as join keys are factors or characters
 edx[, userId := factor(userId)]
@@ -334,6 +352,18 @@ final_rmse <- sqrt(mean((final_holdout_test$error)^2))
 print(sprintf("Final RMSE: %f", final_rmse))
 
 # Visualize relationship between model inputs and model errors
-final_holdout_test |> ggplot(aes(movie_era, error, group = movie_era)) + geom_boxplot()
-final_holdout_test |> ggplot(aes(genre_1, error, group = genre_1)) + geom_boxplot()
-final_holdout_test |> ggplot(aes(rev_year, error, group = rev_year)) + geom_boxplot()
+
+print(final_holdout_test |> ggplot(aes(movie_era, error, group = movie_era)) + 
+  geom_boxplot() + 
+  ggtitle("Error Distribution with respect to Movie Era") + 
+  xlab("movie era"))
+
+print(final_holdout_test |> ggplot(aes(n_genres, error, group = n_genres)) + 
+  geom_boxplot() + 
+  ggtitle("Error Distribution with respect to Number of Genres") + 
+  xlab("number of genres"))
+
+print(final_holdout_test |> ggplot(aes(rev_year, error, group = rev_year)) + 
+  geom_boxplot() + 
+  ggtitle("Error Distribution with respect to Review Year") + 
+  xlab("review year"))

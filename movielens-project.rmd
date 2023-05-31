@@ -108,7 +108,9 @@ edx$title[str_detect(edx$title, "\\s\\(\\d+\\)$", negate = TRUE)]
 In the case of the *title* column, all values appear to be consistent with the initial format. Next, it is useful to ensure that there are no outliers present in the *rating* column, as these values would likely be erroneous. An easy way to check for outliers while also getting an idea of set's distribution is to use a histogram. Shown below is a histogram of the *edx* dataset's *rating* column.
 
 ```{r}
-hist(edx$rating, breaks = 20, xlim = c(0, max(edx$rating)))
+# Visualize rating distribution in edx
+hist(edx$rating, breaks = 20, xlim = c(0, max(edx$rating)), xlab = "Rating", 
+     main = "Histogram of Ratings in edx")
 ```
 
 Upon viewing the above chart, a few facts become apparent: First, values in the column are bound between 0.5 and 5. Second, all values appear to be multiples of 0.5. Third, it does not appear as though any outliers are present. It is important to note that all further steps are taken after the "data.frame" objects representing the *edx* and holdout datasets are transformed into "data.table" objects. This is done because the data.table library was found to be much faster than the "tidyverse" library when large quantities of data are considered.
@@ -155,7 +157,8 @@ As shown above, the baseline RMSE yielded by this simple model is slightly over 
 ```{r}
 # Visualize proportion of rows containing 6, 7, or 8 listed genres 
 genre_count_edx <- str_count(edx$genres, "\\|") + 1
-hist(genre_count_edx, breaks = 8, xlab = "Number of Genres")
+hist(genre_count_edx, breaks = 8, xlab = "Number of Genres", 
+     main = "Histogram of Genre Count in edx")
 ```
 
 In fact, genres 6, 7, and 8 are present in only 0.868% of rows in the *edx* set. As such, only columns corresponding to the first 5 listed genres are created. The total number of non-null genres in each row is also added as a column named *n_genres*, and it should be noted that this value only takes into account the aforementioned 5 individual genre columns. This was found to yield a slightly better result than taking into account all 8 genres potentially found in a *genres* column value. Note that the *genres* column itself was not found to improve RMSE when used in conjunction with its derived columns, and is therefore not used as an input during model training.
@@ -291,7 +294,7 @@ for(row in 1:nrow(params)){
 }
 ```
 
-Every iteration of the loop requires setting the values of two hyperparameters: *era_len* and *lambda*. The first of these determines the manner in which the *movie_era* column is calculated. This column is created by grouping values from the movie year column into eras of a length equal to *era_len*, and is calculated for the *edx* set during each full iteration of the model-tuning loop. The second hyperparameter is used to regularize the model by reducing the effect of average biases that were calculated with few observations. A larger value assigned to *lambda* will cause a larger penalty to be applied to low-observation average biases.
+Every iteration of the loop requires setting the values of two hyperparameters: *era_len* and *lambda*. The first of these determines the manner in which the *movie_era* column is calculated. This column is created by grouping values from the movie year column into eras of a length equal to *era_len*, and is calculated for the *edx* set during each full iteration of the model-tuning loop. The second hyperparameter is used to regularize the model by reducing the effect of average biases that were calculated with few observations. A larger value assigned to *lambda* will cause a larger penalty to be applied to low-observation average biases. The values tested for *era_len* are 5, 10, 15, 20, and 25. The values tested for *lambda* are 1 through 8.
 
 ```{r, eval=FALSE}
 # Hyperparameters
@@ -386,7 +389,7 @@ params$rmse[row] <- mean(rmses)
 params$sd[row] <- sd(rmses)
 ```
 
-The relationship between hyperparameter value and resulting average RMSE (aRMSE) can be effectively visualized with a set of box plots for both *era_len* and *lambda*. However, due to the time it would take to run the model-tuning loop with all combinations of hyperparameters, the code necessary to create these box plots is not evaluated in this report. Although it is tempting to determine the best combination by simply picking the pair of hyperparameters associated with the lowest aRMSE, the aforementioned box plots reveal that many of the smallest aRMSEs are outliers. As a result, these box plots are used to visualize the median aRMSE associated with each tested hyperparameter value. For both *era_len* and *lambda*, the value associated with the lowest such median is chosen for use in the final model. In this case, the best value for *era_len* is found to be 15 and the best value for *lambda* is found to be 6. Although it is not run, the code used to create the aforementioned box plots is provided below for reference.
+The relationship between hyperparameter value and resulting average RMSE (aRMSE) can be effectively visualized with a set of box plots for both *era_len* and *lambda*. However, due to the time it would take to run the model-tuning loop with all combinations of hyperparameters, the code necessary to create these box plots is not run in this report. Although it is tempting to determine the best combination by simply picking the pair of hyperparameters associated with the lowest aRMSE, the aforementioned box plots reveal that many of the smallest aRMSEs are outliers. As a result, these box plots are used to visualize the median aRMSE associated with each tested hyperparameter value. For both *era_len* and *lambda*, the value associated with the lowest such median is chosen for use in the final model. In this case, the best value for *era_len* is found to be 15 and the best value for *lambda* is found to be 6. Although it is not evaluated, the code used to create the aforementioned box plots is provided below for reference.
 
 ```{r, eval=FALSE}
 # Visualize relationship between hyperparameter values and average RMSE.
@@ -459,7 +462,10 @@ As can be seen above, a final RMSE value of slightly over 0.8642 is yielded when
 
 ```{r}
 # Visualize relationship between movie era and model errors
-final_holdout_test |> ggplot(aes(movie_era, error, group = movie_era)) + geom_boxplot()
+final_holdout_test |> ggplot(aes(movie_era, error, group = movie_era)) + 
+  geom_boxplot() + 
+  ggtitle("Error Distribution with respect to Movie Era") + 
+  xlab("movie era")
 ```
 
 The first quartile, median, thrid quartile, and range (excluding outliers) of each box plot stay fairly consistent across movie eras, with the notable exception of the first box. This first box is likely skewed because few observations are found corresponding to the era of 1905 through 1919. The total range of values in each plot (including outliers) appears to increase somewhat as the eras become more recent, likely due the increased number of observations associated with those eras. The next chart compares errors to their associated values in *n_genres*, a column corresponding the number of non-null genres in each row.
@@ -467,7 +473,9 @@ The first quartile, median, thrid quartile, and range (excluding outliers) of ea
 ```{r}
 # Visualize relationship between first genre and model errors
 final_holdout_test |> ggplot(aes(n_genres, error, group = n_genres)) + 
-geom_boxplot()
+  geom_boxplot() + 
+  ggtitle("Error Distribution with respect to Number of Genres") + 
+  xlab("number of genres")
 ```
 
 Like in the previous graph, the median errors stay fairly consistent across the X axis. Also like the previous graph, genre counts associated with fewer observations tend to have a smaller total range of errors. This is exemplified by the 5th plot, which represents the genre count with the lowest number of observations. The outliers of the 3rd plot appear to be shifted up slightly relative to the others, but it is hard to tell if this is a real effect. The final chart compares errors to their associated values in *rev_year*, a column corresponding to the year that each rating was made.
@@ -475,7 +483,9 @@ Like in the previous graph, the median errors stay fairly consistent across the 
 ```{r}
 # Visualize relationship between review year and model errors
 final_holdout_test |> ggplot(aes(rev_year, error, group = rev_year)) + 
-geom_boxplot()
+  geom_boxplot() + 
+  ggtitle("Error Distribution with respect to Review Year") + 
+  xlab("review year")
 ```
 
 As with the other charts, the median errors are fairly consistent apart from an initial single-observation value. The general correlation between total error range and number of observations is also evident to a small extent. One interesting effect seen in this graph is that box and whisker sizes (not including outliers) appear to shift over the X axis. This effect seems to be related to similar movements in rating variance over time. In other words, a *rev_year* value associated with more consistent ratings seems to yield more consistent errors.
