@@ -107,9 +107,8 @@ hist(edx$rating, breaks = 20, xlim = c(0, max(edx$rating)), xlab = "Rating",
 hist(final_holdout_test$rating, breaks = 20, xlim = c(0, max(edx$rating)),  
      xlab = "Rating", main = "Histogram of Ratings in holdout")
 
-# Convert data to data.table objects
+# Convert edx to data.table object
 setDT(edx)
-setDT(final_holdout_test)
 
 print("---------------------------------------------------------------")
 
@@ -125,15 +124,6 @@ primary_id <- edx[title == "War of the Worlds (2005)",
                   length(title), keyby=movieId][1, movieId]
 
 edx$movieId[which(edx$title == "War of the Worlds (2005)")] <- primary_id
-
-final_holdout_test$movieId[
-  which(final_holdout_test$title == "War of the Worlds (2005)")] <- primary_id
-
-# Convert movieId column to factor. All future input columns must be factors or 
-# characters due to data.table joining behavior
-
-edx[, movieId := factor(movieId)]
-final_holdout_test[, movieId := factor(movieId)]
 
 print("---------------------------------------------------------------")
 
@@ -193,15 +183,15 @@ edx[, rbias := rating - global_mean]
 # represent the full range of values tested during model tuning. The 
 # uncommented lines contain the best hyperparameter values found. 
 
-# elen_pars <- seq(5, 25, 5)
+# era_len_pars <- seq(5, 25, 5)
 # lambda_pars <- 2:8
 
-elen_pars <- c(15)  # Controls era length
-lambda_pars <- c(6) # Controls extent of regularization
+era_len_pars <- c(15)  # era_len controls era length
+lambda_pars <- c(6)  # lambda controls extent of regularization
 
 # Array to hold hyperparameter combinations and results
-params <- expand.grid(elen_pars, lambda_pars)
-names(params) <- c("elen_pars", "lambda_pars")
+params <- expand.grid(era_len_pars, lambda_pars)
+names(params) <- c("era_len_pars", "lambda_pars")
 params$rmse <- NaN
 params$sd <- NaN
 
@@ -217,13 +207,11 @@ for(row in 1:nrow(params)){
   print("------------")
   rmses <- c()
 
-  # Extract movie era from movie year
-  era_len <- params$elen_pars[row]
+  # Set era_len hyperparameter and extract movie era from movie year
+  era_len <- params$era_len_pars[row]
   edx[, movie_era := factor(floor(as.integer(m_year_edx) / era_len) * era_len)]
-
-  # Make sure all variables to be used as join keys are factors or characters
-  edx[, userId := factor(userId)]
-
+  
+  # Set lambda hyperparameter
   lambda = params$lambda_pars[row]
 
   for(i in 1:3){
@@ -297,11 +285,14 @@ print("---------------------------------------------------------------")
 # params |> ggplot(aes(lambda_pars, rmse, group = lambda_pars)) +
 #   geom_boxplot() + geom_point()
 
-# params |> ggplot(aes(elen_pars, rmse, group = elen_pars)) +
+# params |> ggplot(aes(era_len_pars, rmse, group = era_len_pars)) +
 #   geom_boxplot() + geom_point()
 
 
 # Preprocess holdout dataset
+setDT(final_holdout_test)
+final_holdout_test$movieId[
+  which(final_holdout_test$title == "War of the Worlds (2005)")] <- primary_id
 separate_genres(final_holdout_test)
 extract_ts(final_holdout_test)
 m_year_fht <- str_match(final_holdout_test$title, "\\s\\((\\d+)\\)$")[,2]
@@ -313,12 +304,10 @@ edx[, movie_era := factor(floor(as.integer(m_year_edx) / era_len) * era_len)]
 final_holdout_test[, movie_era := 
                      factor(floor(as.integer(m_year_fht) / era_len) * era_len)]
 
-# Make sure all variables to be used as join keys are factors or characters
-edx[, userId := factor(userId)]
-final_holdout_test[, userId := factor(userId)]
-
 # Set lambda equal to best value
 lambda = 6
+
+# Model-training loop for final model
 
 for(col in c("genre_1", "genre_2", "genre_3", "genre_4", "genre_5", "n_genres",
              "movie_era", "movie_year", "rev_hour", "rev_day", "rev_month",
@@ -367,3 +356,6 @@ print(final_holdout_test |> ggplot(aes(rev_year, error, group = rev_year)) +
   geom_boxplot() + 
   ggtitle("Error Distribution with respect to Review Year") + 
   xlab("review year"))
+
+# Calculate final model's mean error
+print(sprintf("Mean model error: %f",mean(final_holdout_test$error)))
