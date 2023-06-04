@@ -266,7 +266,7 @@ for(row in 1:nrow(params)){
                   train_rmse, rmses[i]))
   }
   
-  # Record mean and sd of RMSEs for each hyperparameter combination
+  # Record mean and SD of RMSEs for each hyperparameter combination
   params$rmse[row] <- mean(rmses)
   params$sd[row] <- sd(rmses)
 }
