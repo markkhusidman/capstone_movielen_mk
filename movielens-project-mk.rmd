@@ -296,7 +296,7 @@ for(row in 1:nrow(params)){
 }
 ```
 
-Every iteration of the loop requires setting the values of two hyperparameters: *era_len* and *lambda*. The first of these determines the manner in which the *movie_era* column is calculated. This column is created by grouping values from the movie year column into eras of a length equal to *era_len*, and is calculated for the *edx* set during each full iteration of the model-tuning loop. The second hyperparameter is used to regularize the model by reducing the effect of average biases that were calculated with few observations. A larger value assigned to *lambda* will cause a larger penalty to be applied to low-observation average biases. The values tested for *era_len* are 5, 10, 15, 20, and 25. The values tested for *lambda* are 1 through 8.
+Every iteration of the loop requires setting the values of two hyperparameters: *era_len* and *lambda*. The first of these determines the manner in which the *movie_era* column is calculated. This column is created by grouping values from the movie year column into eras of a length equal to *era_len*, and is calculated for the *edx* set during each full iteration of the model-tuning loop. The second hyperparameter is used to regularize the model by reducing the effect of average biases that were calculated with few observations. A larger value assigned to *lambda* will cause a larger penalty to be applied to low-observation average biases. The values tested for *era_len* are 5, 10, 15, 20, and 25. The values tested for *lambda* are 2 through 8.
 
 ```{r, eval=FALSE}
 # Hyperparameters
